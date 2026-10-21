@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TapToText Privacy Policy</title>
+<meta name="description" content="TapToText runs on your iPhone. It collects no data, has no accounts and does no tracking.">
+<style>
+  :root {
+    --bg: #ffffff;
+    --text: #16161d;
+    --muted: #5b5b6b;
+    --accent: #5b4fe0;
+    --border: #e6e6ee;
+    --card: #f6f6fa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #06060f;
+      --text: #f2f2f7;
+      --muted: #a5a5b8;
+      --accent: #a593ff;
+      --border: #22222f;
+      --card: #10101c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 680px; margin: 0 auto; padding: 48px 16px 64px; }
+  h1 { font-size: 30px; line-height: 1.2; margin: 0 0 6px; }
+  h2 { font-size: 19px; margin: 36px 0 8px; }
+  p, li { color: var(--text); }
+  .muted { color: var(--muted); font-size: 14px; }
+  .summary {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin: 28px 0 8px;
+  }
+  .summary ul { margin: 0; padding-left: 20px; }
+  a { color: var(--accent); }
+  footer { margin-top: 48px; border-top: 1px solid var(--border); padding-top: 16px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>TapToText Privacy Policy</h1>
+  <p class="muted">Effective October 20, 2026</p>
+
+  <div class="summary">
+    <ul>
+      <li>Your voice and your text are processed on your iPhone. They are never sent to us or to anyone else.</li>
+      <li>TapToText has no account, no analytics, no ads and no tracking.</li>
+      <li>We don't collect any data, so there is nothing for us to sell, share or lose.</li>
+    </ul>
+  </div>
+
+  <h2>Speech and text</h2>
+  <p>When you record, TapToText transcribes your speech on your iPhone, with a speech model it has downloaded or with Apple's built-in speech recognition. Cleanup and translation also run on your iPhone. Your audio and the resulting text are never uploaded.</p>
+  <p>Your transcripts (History), the step-by-step records of each recording (Logs) and, when Settings › Storage is set to <b>Audio + transcript</b> (the default), the recordings themselves are stored only on your iPhone. Recordings are kept so you can play them back while correcting a transcript and run them again in Audio Lab. Choose <b>Transcript only</b> or <b>Don't save</b> to stop keeping audio; recordings already kept are then deleted. Anything kept is removed when you delete it in the app, when it reaches the auto-delete age you choose (from 1 day), when recordings reach the space limit you set, or when you delete TapToText.</p>
+  <p>Audio and video files you import into Audio Lab are read and transcribed on your iPhone and are never uploaded.</p>
+
+  <h2>Microphone and speech recognition</h2>
+  <p>TapToText asks for access to the microphone so it can record you, and to Apple's speech recognition if you choose the Apple engine. It records only after you start a recording, from the app, a widget, a control or a shortcut. While it records, iOS shows the recording indicator and TapToText shows a Live Activity.</p>
+
+  <h2>Network use</h2>
+  <p>TapToText connects to the internet only to download the speech and translation models you choose. These downloads come from Hugging Face (huggingface.co) and, for Apple's speech and translation languages, from Apple. Like any download, these servers see your IP address. TapToText doesn't send them your audio, your text or any identifier. After a model has downloaded, TapToText works offline.</p>
+
+  <h2>Clipboard, sharing and shortcuts</h2>
+  <p>TapToText copies transcripts to the clipboard when you ask it to (or automatically, if that setting is on). When you use a TapToText shortcut, the transcript is passed to Apple's Shortcuts app on your iPhone. Text, files or logs leave your iPhone only when you share them yourself with the share sheet.</p>
+
+  <h2>Purchases</h2>
+  <p>Purchases and subscriptions are handled by Apple through the App Store. We don't receive your name, email address or payment details. TapToText stores the start date of your free trial in your iPhone's Keychain, so the trial isn't restarted by reinstalling. This date stays on your iPhone. Apple's handling of purchases is covered by <a href="https://www.apple.com/legal/privacy/">Apple's Privacy Policy</a>.</p>
+
+  <h2>Children</h2>
+  <p>TapToText collects no personal information from anyone, including children.</p>
+
+  <h2>Changes</h2>
+  <p>If TapToText ever adds a feature that sends data off your iPhone, it will be optional, it will ask for your consent first, and this policy will be updated before that version is released. The date at the top shows the latest update.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about privacy? Open an issue at <a href="https://github.com/eotsevych/taptotext/issues">github.com/eotsevych/taptotext/issues</a>.</p>
+
+  <footer class="muted">TapToText · On-device only · No account</footer>
+</main>
+</body>
+</html>
