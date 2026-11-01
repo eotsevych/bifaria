@@ -359,6 +359,7 @@ mod tests {
         settings.retention_days = 0;
         let audio = crate::audio::CapturedAudio::empty();
         let old = history.add_entry("old", "old", "en", "en", 0.1, Some(&audio), &settings).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2)); // audio files are named by the millisecond
         let new = history.add_entry("new", "new", "en", "en", 0.1, Some(&audio), &settings).unwrap();
         let file = |id: i64| history.get_records(10).unwrap().into_iter().find(|r| r.id == id).and_then(|r| r.audio_path);
         let (old_file, new_file) = (file(old).unwrap(), file(new).unwrap());
