@@ -1,14 +1,14 @@
 //! The "Apple" translation provider: Apple's on-device Translation framework, the engine behind the
 //! Translate app. No API key or network, and nothing leaves the Mac.
 //!
-//! The framework is Swift-only, so RevFly talks to `revfly-translate` (src-tauri/apple-translate),
-//! a helper bundled next to the RevFly executable. One helper process is started on first use and
+//! The framework is Swift-only, so Bifaria talks to `revfly-translate` (src-tauri/apple-translate),
+//! a helper bundled next to the Bifaria executable. One helper process is started on first use and
 //! kept running, so the language model stays loaded between dictations; it gets one JSON request
 //! per line and answers each with one JSON line. Language downloads need Apple's own prompt, which
 //! the helper shows in a small window of its own (`revfly-translate download <source> <target>`).
 //!
 //! Needs macOS 26 or later: before that, Apple's framework translates only from inside a SwiftUI
-//! view. RevFly itself still runs on older macOS; there the provider is offered but disabled.
+//! view. Bifaria itself still runs on older macOS; there the provider is offered but disabled.
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -39,8 +39,8 @@ pub fn is_apple(provider: &str) -> bool {
     provider.trim().eq_ignore_ascii_case(PROVIDER)
 }
 
-/// BCP-47 code Apple's framework takes for a RevFly language name or code: "Ukrainian" → "uk",
-/// "Chinese" → "zh-Hans". `None` for Auto, unknown and "none". A code RevFly has no name for
+/// BCP-47 code Apple's framework takes for a Bifaria language name or code: "Ukrainian" → "uk",
+/// "Chinese" → "zh-Hans". `None` for Auto, unknown and "none". A code Bifaria has no name for
 /// (e.g. Whisper's "ko") is passed through.
 pub fn to_bcp47(lang: &str) -> Option<String> {
     let norm = normalize_lang(lang);
@@ -141,7 +141,7 @@ fn unavailable_reason_for(os: Option<(u32, u32)>, helper_found: bool) -> Option<
             "Apple Translation needs macOS {MIN_MACOS} or later; this Mac runs macOS {major}.{minor}."
         )),
         _ if !helper_found => Some(format!(
-            "This RevFly build doesn't include the Apple Translation helper ({HELPER_NAME}). Reinstall RevFly."
+            "This Bifaria build doesn't include the Apple Translation helper ({HELPER_NAME}). Reinstall Bifaria."
         )),
         _ => None,
     }
@@ -156,7 +156,7 @@ pub fn is_available() -> bool {
     unavailable_reason().is_none()
 }
 
-/// The helper next to the RevFly executable (Contents/MacOS in the app, target/<profile> in dev).
+/// The helper next to the Bifaria executable (Contents/MacOS in the app, target/<profile> in dev).
 /// Unit tests use the one build.rs made.
 fn helper_path() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
@@ -533,7 +533,7 @@ mod tests {
         assert_eq!(to_bcp47("Chinese").as_deref(), Some("zh-Hans"));
         assert_eq!(to_bcp47("zh").as_deref(), Some("zh-Hans"));
         assert_eq!(to_bcp47("Japanese").as_deref(), Some("ja"));
-        // Whisper codes RevFly has no name for pass through.
+        // Whisper codes Bifaria has no name for pass through.
         assert_eq!(to_bcp47("ko").as_deref(), Some("ko"));
         assert_eq!(to_bcp47("pt-br").as_deref(), Some("pt-BR"));
         assert_eq!(to_bcp47("zh-hant").as_deref(), Some("zh-Hant"));

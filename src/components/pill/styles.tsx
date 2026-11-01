@@ -14,7 +14,7 @@ import {
 } from "./view";
 
 const MONO = "JetBrains Mono, monospace";
-const TEAL_BARS = "linear-gradient(180deg, #2dd4bf, #22d3ee)";
+const ORANGE_BARS = "linear-gradient(180deg, #ffb98c, #ff8a4c)";
 
 // Bars of the two-line and single-line styles (in a 36 / 30 px well) and of the capsule.
 const WELL_WAVE: WaveSize = { count: 5, width: 2.5, gap: 2, min: 3, max: 18, growth: 15 };
@@ -161,7 +161,7 @@ function WellVisual({
         <SoundWave
           levels={levels}
           size={wave}
-          gradient={view.run === "translate" ? TEAL_BARS : undefined}
+          gradient={view.run === "translate" ? ORANGE_BARS : undefined}
         />
       );
     case "transcribing":
@@ -355,7 +355,7 @@ function CapsulePill({
         <SoundWave
           levels={levels}
           size={CAPSULE_WAVE}
-          gradient={view.run === "translate" ? TEAL_BARS : undefined}
+          gradient={view.run === "translate" ? ORANGE_BARS : undefined}
         />
       );
       if (view.run === "translate") slot = `→ ${languageCode(view.targetLang)}`;

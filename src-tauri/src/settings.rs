@@ -149,7 +149,7 @@ pub struct AppSettings {
     pub custom_api_model: String,
     #[serde(default = "default_prompt_template")]
     pub prompt_template: String,
-    /// The RevFly version that last ran, so an upgrade can be told apart from a new install.
+    /// The Bifaria version that last ran, so an upgrade can be told apart from a new install.
     #[serde(default)]
     pub last_version: Option<String>,
 }

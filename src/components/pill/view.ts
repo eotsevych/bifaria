@@ -76,8 +76,8 @@ export function pillStyleOf(value: string | undefined): PillStyleId {
   return PILL_STYLES.find((s) => s.id === value)?.id ?? "classic";
 }
 
-/** Color of a recording started with the translate hotkey, from listening through translating. */
-export const TRANSLATE_ACCENT = "#14b8a6";
+/** Color of a recording started with the translate hotkey, from listening through translating: Bifaria's orange. */
+export const TRANSLATE_ACCENT = "#ff8a4c";
 
 const LANGUAGE_CODES: Record<string, string> = {
   english: "EN",

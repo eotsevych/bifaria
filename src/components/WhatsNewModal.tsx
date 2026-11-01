@@ -57,7 +57,7 @@ const AppMark = () => (
       width: 22,
       height: 22,
       borderRadius: 7,
-      background: "linear-gradient(135deg,#6d7cff,#22c5ee)",
+      background: "linear-gradient(135deg,#6a5cff,#ff7aa8,#ff8a3d)",
       flexShrink: 0,
     }}
   />
@@ -213,7 +213,7 @@ export function WhatsNewModal() {
         <div data-tauri-drag-region style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <AppMark />
           <span data-tauri-drag-region style={{ fontSize: 13, fontWeight: 600 }}>
-            RevFly
+            Bifaria
           </span>
           {version && (
             <span
@@ -282,7 +282,7 @@ export function WhatsNewModal() {
             color: p.text,
           }}
         >
-          The biggest RevFly update yet
+          The biggest Bifaria update yet
         </h1>
         <p style={{ margin: 0, fontSize: 13, lineHeight: 1.45, color: p.body }}>
           Translation without the internet on every computer, faster transcription on your
@@ -366,7 +366,7 @@ export function WhatsNewModal() {
             Natural speech, For AI prompts or Verbatim.
           </Item>
           <Item p={p} title="Keep my clipboard">
-            After pasting, RevFly puts back what you had copied.
+            After pasting, Bifaria puts back what you had copied.
           </Item>
         </Group>
       </div>

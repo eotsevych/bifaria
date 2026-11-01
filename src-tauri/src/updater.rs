@@ -47,7 +47,7 @@ pub struct UpdateStatus {
     pub store_managed: bool,
 }
 
-/// True when RevFly runs from its Microsoft Store (MSIX) package. The Store installs updates, and
+/// True when Bifaria runs from its Microsoft Store (MSIX) package. The Store installs updates, and
 /// its policies forbid an app replacing its own files, so the built-in updater stays off there.
 pub fn store_managed() -> bool {
     static MANAGED: OnceLock<bool> = OnceLock::new();
@@ -130,7 +130,7 @@ fn tray_label(status: &UpdateStatus) -> String {
     match status.state {
         UpdateState::Idle => "Check for Updates…".to_string(),
         UpdateState::Checking => "Checking for Updates…".to_string(),
-        UpdateState::UpToDate => "✓ RevFly Is Up to Date".to_string(),
+        UpdateState::UpToDate => "✓ Bifaria Is Up to Date".to_string(),
         UpdateState::Available => format!("⬆ Install Update {} & Restart", version),
         UpdateState::Downloading => match status.percent {
             Some(p) => format!("Downloading Update… {}%", p),
@@ -199,7 +199,7 @@ pub async fn check(app: &AppHandle, user_initiated: bool) {
             }
         }
         Ok(None) => {
-            log::info!("RevFly is up to date");
+            log::info!("Bifaria is up to date");
             let state = if user_initiated { UpdateState::UpToDate } else { UpdateState::Idle };
             set_state(app, state, None, None, None);
         }
@@ -294,9 +294,9 @@ fn notify_once(app: &AppHandle, version: &str) {
     let result = app
         .notification()
         .builder()
-        .title(format!("RevFly {} is available", version))
+        .title(format!("Bifaria {} is available", version))
         .body(format!(
-            "Click the RevFly {} icon and choose Install Update, or open Settings → General.",
+            "Click the Bifaria {} icon and choose Install Update, or open Settings → General.",
             place
         ))
         .show();

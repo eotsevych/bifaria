@@ -58,6 +58,7 @@ function getStateAccent(
   title?: string,
 ): string {
   if (state === "transcribing") return "#00d4ff";
+  if (state === "translating") return "#e58bdb"; // Pink, apart from the violet and orange recordings
   if (state === "done") return "#00e5a0";
   if (state === "error") {
     const lower = (title || "").toLowerCase();
@@ -156,14 +157,14 @@ export function VoicePill() {
   const accentKey: AccentColor = (localStorage.getItem("revfly_accent") as AccentColor) || "violet";
   const t = tok(themeMode, accentKey);
   const micWarning = state.state === "listening" && state.warning === true;
-  // A recording started with the translate hotkey stays teal until it's done; automatic
+  // A recording started with the translate hotkey stays orange until it's done; automatic
   // translation only gets an outlined badge, since it may not translate at all.
   const isTranslateMode = runMode === "translate";
   const isAutoMode = runMode === "auto";
   const inRun = ["listening", "transcribing", "translating"].includes(state.state);
   const inTranslateRun = isTranslateMode && inRun;
   const accent = micWarning
-    ? "#ff9f43"
+    ? "#ffd166"
     : inTranslateRun
       ? TRANSLATE_ACCENT
       : getStateAccent(state.state, t.accent, state.title);

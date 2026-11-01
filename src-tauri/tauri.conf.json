@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "RevFly",
+  "productName": "Bifaria",
   "version": "1.0.11",
   "identifier": "com.revfly.desktop",
   "build": {
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "RevFly",
+        "title": "Bifaria",
         "width": 340,
         "height": 100,
         "resizable": false,
@@ -38,11 +38,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "publisher": "RevFly",
+    "publisher": "Bifaria",
     "copyright": "Copyright (c) 2026 Eugene Otsevich. MIT License.",
     "category": "Productivity",
     "shortDescription": "Local-first voice dictation and translation",
-    "longDescription": "RevFly records your speech, transcribes it locally, optionally translates it with AI, and pastes the result into the active window.",
+    "longDescription": "Bifaria records your speech, transcribes it locally, optionally translates it with AI, and pastes the result into the active window.",
     "macOS": {
       "minimumSystemVersion": "11.0",
       "infoPlist": "Info.plist"

@@ -4,7 +4,7 @@
 //! copies, the model's scratch) and frees them seconds later. glibc serves big allocations with
 //! mmap and unmaps them on free, but after the first such free it raises that threshold (up to
 //! 32 MB), so later buffers come from malloc's arenas. Arena memory freed by the app stays cached
-//! and is never returned, so RevFly's memory grows with every dictation.
+//! and is never returned, so Bifaria's memory grows with every dictation.
 //!
 //! Adapted from Handy (https://github.com/cjpais/Handy, MIT License, Copyright (c) 2025 CJ Pais),
 //! which measured about 15 MB kept per 2-minute dictation, and about 0.5 MB with this fix.

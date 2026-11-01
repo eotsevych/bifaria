@@ -45,7 +45,14 @@ export function PillPreview({ style, t }: { style: PillStyleId; t: Tokens }) {
   }, []);
 
   const { state, into } = stageAt(now);
-  const accent = state === "transcribing" ? "#00d4ff" : state === "done" ? "#00e5a0" : t.accent;
+  const accent =
+    state === "transcribing"
+      ? "#00d4ff"
+      : state === "translating"
+        ? "#e58bdb"
+        : state === "done"
+          ? "#00e5a0"
+          : t.accent;
   const view: PillView = {
     state,
     accent,

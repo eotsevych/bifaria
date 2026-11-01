@@ -1,8 +1,8 @@
 [package]
 name = "revfly"
 version = "1.0.11"
-description = "RevFly Desktop Assistant"
-authors = ["RevFly Team"]
+description = "Bifaria Desktop Assistant"
+authors = ["Bifaria Team"]
 edition = "2021"
 rust-version = "1.77.2"
 

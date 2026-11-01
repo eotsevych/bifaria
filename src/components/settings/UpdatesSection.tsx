@@ -26,11 +26,11 @@ function statusText(status: UpdateStatus | null): string {
         ? `Downloading ${status.version}… ${status.percent}%`
         : `Downloading ${status.version}…`;
     case "installing":
-      return `Installing ${status.version}. RevFly will restart`;
+      return `Installing ${status.version}. Bifaria will restart`;
     case "error":
       return status.message ? `Update failed: ${status.message}` : "Update failed";
     default:
-      return "RevFly checks for updates once a day";
+      return "Bifaria checks for updates once a day";
   }
 }
 
@@ -90,7 +90,7 @@ export default function UpdatesSection({ t }: { t: Tokens }) {
       <Row
         label={
           <>
-            {status ? `RevFly ${status.current_version}` : "RevFly"}
+            {status ? `Bifaria ${status.current_version}` : "Bifaria"}
             <span
               style={{
                 marginLeft: 8,

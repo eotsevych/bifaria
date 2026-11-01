@@ -280,7 +280,7 @@ fn play_test_sound() -> Result<(), String> {
     Ok(())
 }
 
-/// Whether RevFly opens when you log in. The system's login item is the source of truth, so it
+/// Whether Bifaria opens when you log in. The system's login item is the source of truth, so it
 /// isn't kept in the settings file.
 #[tauri::command]
 fn get_launch_at_login(app_handle: AppHandle) -> Result<bool, String> {
@@ -413,7 +413,7 @@ async fn apple_translation_info() -> AppleTranslationInfo {
     }
 }
 
-/// Apple's language packs for translating into `target_lang` (a RevFly language name), and the
+/// Apple's language packs for translating into `target_lang` (a Bifaria language name), and the
 /// target's code.
 #[derive(serde::Serialize)]
 struct AppleLanguagePacks {
@@ -440,7 +440,7 @@ async fn apple_translation_download(state: State<'_, AppState>, source: String, 
     apple_translate::download(&source, &target, model).await.map_err(|e| e.describe(&pair))
 }
 
-/// The offline models' language packs for translating into `target_lang` (a RevFly language name),
+/// The offline models' language packs for translating into `target_lang` (a Bifaria language name),
 /// and the target's code; the same shape as Apple's.
 #[tauri::command]
 async fn offline_translation_languages(target_lang: String) -> Result<AppleLanguagePacks, String> {

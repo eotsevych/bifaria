@@ -328,7 +328,7 @@ pub async fn translate_with_openai_compatible(
 ) -> Result<String, String> {
     let mut url = endpoint_url.trim().to_string();
     if url.is_empty() {
-        return Err("Translation endpoint URL is missing. Add URL in RevFly settings.".to_string());
+        return Err("Translation endpoint URL is missing. Add URL in Bifaria settings.".to_string());
     }
 
     // Normalize URL

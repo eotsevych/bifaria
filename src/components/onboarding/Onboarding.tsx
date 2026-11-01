@@ -58,9 +58,9 @@ const DARK = {
   accentSoftBorder: "rgba(165,148,255,.3)",
   accentText: "#c4b8ff",
   onAccent: "#0b0b12",
-  teal: "#2dd4bf",
-  tealSoft: "rgba(45,212,191,.14)",
-  tealBorder: "rgba(45,212,191,.5)",
+  orange: "#ff8a4c",
+  orangeSoft: "rgba(255,138,76,.14)",
+  orangeBorder: "rgba(255,138,76,.5)",
   cyan: "#22d3ee",
   green: "#34d399",
   greenBorder: "rgba(52,211,153,.4)",
@@ -70,7 +70,7 @@ const DARK = {
   switchOff: "rgba(255,255,255,.14)",
   dashed: "rgba(255,255,255,.18)",
   pillShadow: "0 6px 20px rgba(0,0,0,.35)",
-  barGradient: "linear-gradient(180deg,#6d7cff,#22c5ee)",
+  barGradient: "linear-gradient(180deg,#a593ff,#7c6fff)",
 };
 
 type Palette = typeof DARK;
@@ -93,9 +93,9 @@ const LIGHT: Palette = {
   accentSoftBorder: "rgba(124,106,240,.3)",
   accentText: "#5b4bd6",
   onAccent: "#ffffff",
-  teal: "#0d9488",
-  tealSoft: "rgba(13,148,136,.1)",
-  tealBorder: "rgba(13,148,136,.45)",
+  orange: "#ea580c",
+  orangeSoft: "rgba(234,88,12,.1)",
+  orangeBorder: "rgba(234,88,12,.45)",
   cyan: "#0891b2",
   green: "#059669",
   greenBorder: "rgba(5,150,105,.4)",
@@ -105,7 +105,7 @@ const LIGHT: Palette = {
   switchOff: "rgba(0,0,0,.15)",
   dashed: "rgba(0,0,0,.2)",
   pillShadow: "0 6px 20px rgba(0,0,0,.08)",
-  barGradient: "linear-gradient(180deg,#6d7cff,#22c5ee)",
+  barGradient: "linear-gradient(180deg,#a593ff,#7c6fff)",
 };
 
 const LANGUAGES: [code: string, name: string][] = [
@@ -379,7 +379,7 @@ function Orbit({ t, p }: { t: number; p: Palette }) {
   return (
     <div style={{ position: "relative", width: R * 2 + d, height: 20 }}>
       {dot(a, p.cyan)}
-      {dot(a + Math.PI, p.teal)}
+      {dot(a + Math.PI, p.orange)}
     </div>
   );
 }
@@ -479,7 +479,7 @@ function MiniPill({
       {kind === "orbit" && <Orbit t={t} p={p} />}
       {kind === "copy" && <CopyIcon color={p.green} />}
       {kind === "x" && <XIcon color={p.red} />}
-      {slot && <span style={{ font: `600 11px ${MONO}`, color: p.teal }}>{slot}</span>}
+      {slot && <span style={{ font: `600 11px ${MONO}`, color: p.orange }}>{slot}</span>}
     </div>
   );
 }
@@ -510,7 +510,7 @@ const AppMark = () => (
       width: 22,
       height: 22,
       borderRadius: 7,
-      background: "linear-gradient(135deg,#6d7cff,#22c5ee)",
+      background: "linear-gradient(135deg,#6a5cff,#ff7aa8,#ff8a3d)",
       flexShrink: 0,
     }}
   />
@@ -649,7 +649,7 @@ function AccessStage({ p, granted }: { p: Palette; granted: boolean | null }) {
       </span>
       <Row p={p}>
         <AppMark />
-        <span style={{ fontSize: 13, flex: 1 }}>RevFly</span>
+        <span style={{ fontSize: 13, flex: 1 }}>Bifaria</span>
         <div
           role="switch"
           aria-checked={on}
@@ -680,10 +680,10 @@ function AccessStage({ p, granted }: { p: Palette; granted: boolean | null }) {
       </Row>
       <span style={{ fontSize: 12, color: p.dim, lineHeight: 1.5 }}>
         {on ? (
-          "Done. RevFly can paste for you."
+          "Done. Bifaria can paste for you."
         ) : (
           <>
-            Click the switch, then turn RevFly on in{" "}
+            Click the switch, then turn Bifaria on in{" "}
             <a
               href="#"
               onClick={(e) => {
@@ -850,7 +850,7 @@ function KeysStage({ p }: { p: Palette }) {
             ? `Dictate translates other languages → ${target}`
             : `Press, speak, press again → ${target}`,
       value: mode === "hotkey" ? translateKey : "",
-      color: p.teal,
+      color: p.orange,
       editable: mode === "hotkey",
     },
   ];
@@ -952,9 +952,9 @@ function StyleStage({ p }: { p: Palette }) {
               style={{
                 padding: "9px 10px",
                 borderRadius: 9,
-                background: on ? p.tealSoft : p.row,
-                border: `1px solid ${on ? p.tealBorder : p.rowBorder}`,
-                color: on ? p.teal : p.text,
+                background: on ? p.orangeSoft : p.row,
+                border: `1px solid ${on ? p.orangeBorder : p.rowBorder}`,
+                color: on ? p.orange : p.text,
                 font: `500 13px ${SANS}`,
                 cursor: "pointer",
               }}
@@ -995,7 +995,7 @@ function LangStage({ p }: { p: Palette }) {
         </span>
         <span>→</span>
         <span
-          style={{ padding: "3px 7px", borderRadius: 5, background: p.tealSoft, color: p.teal }}
+          style={{ padding: "3px 7px", borderRadius: 5, background: p.orangeSoft, color: p.orange }}
         >
           {langCode(target)}
         </span>
@@ -1014,15 +1014,15 @@ function LangStage({ p }: { p: Palette }) {
                 gap: 8,
                 padding: "9px 10px",
                 borderRadius: 9,
-                background: on ? p.tealSoft : p.row,
-                border: `1px solid ${on ? p.tealBorder : p.rowBorder}`,
+                background: on ? p.orangeSoft : p.row,
+                border: `1px solid ${on ? p.orangeBorder : p.rowBorder}`,
                 color: p.text,
                 font: `500 13px ${SANS}`,
                 cursor: "pointer",
                 textAlign: "left",
               }}
             >
-              <span style={{ font: `600 10px ${MONO}`, color: on ? p.teal : p.dim }}>{code}</span>
+              <span style={{ font: `600 10px ${MONO}`, color: on ? p.orange : p.dim }}>{code}</span>
               {name}
             </button>
           );
@@ -1395,16 +1395,16 @@ function OnboardingInner() {
 
   const copy: Record<StepId, { title: string; body: string }> = {
     welcome: {
-      title: "Speak anywhere. RevFly types it.",
+      title: "Speak anywhere. Bifaria types it.",
       body: "Press a hotkey, talk, press it again. Your words are transcribed (or translated) and pasted right where your cursor is.",
     },
     mic: {
       title: "Allow microphone access",
-      body: "RevFly only listens while you record. Nothing is recorded in the background, and speech is turned into text on your computer.",
+      body: "Bifaria only listens while you record. Nothing is recorded in the background, and speech is turned into text on your computer.",
     },
     access: {
-      title: "Let RevFly paste for you",
-      body: "Accessibility access lets RevFly notice your hotkey in any app and drop text right where your cursor is.",
+      title: "Let Bifaria paste for you",
+      body: "Accessibility access lets Bifaria notice your hotkey in any app and drop text right where your cursor is.",
     },
     keys: {
       title: "Two hotkeys, that’s it",
@@ -1412,11 +1412,11 @@ function OnboardingInner() {
     },
     lang: {
       title: "Translate into…",
-      body: "Speak any language and RevFly detects it. Pick the language translations should come out in.",
+      body: "Speak any language and Bifaria detects it. Pick the language translations should come out in.",
     },
     style: {
       title: "How should your text look?",
-      body: "Pick a style for the text RevFly pastes. Change it any time in Settings → Text, where you can also fine-tune each step.",
+      body: "Pick a style for the text Bifaria pastes. Change it any time in Settings → Text, where you can also fine-tune each step.",
     },
     try: {
       title: "Give it a try",
@@ -1481,7 +1481,7 @@ function OnboardingInner() {
         <div data-tauri-drag-region style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <AppMark />
           <span data-tauri-drag-region style={{ fontSize: 14, fontWeight: 600 }}>
-            RevFly
+            Bifaria
           </span>
         </div>
         <div data-tauri-drag-region style={{ flex: 1, alignSelf: "stretch" }} />

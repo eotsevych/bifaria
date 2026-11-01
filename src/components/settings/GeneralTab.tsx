@@ -620,7 +620,7 @@ export default function GeneralTab({ t }: { t: Tokens }) {
         )}
         <Row
           label="Open at login"
-          hint={launchAtLoginError ?? "Start RevFly automatically when you log in"}
+          hint={launchAtLoginError ?? "Start Bifaria automatically when you log in"}
           t={t}
         >
           <Toggle value={launchAtLogin} onChange={toggleLaunchAtLogin} accent={t.accent} />

@@ -1615,7 +1615,7 @@ impl AppController {
         {
             let mut phase = self.phase.lock().unwrap();
             if *phase != AssistantPhase::Idle {
-                return Err("RevFly is busy; try again when it finishes".to_string());
+                return Err("Bifaria is busy; try again when it finishes".to_string());
             }
             *phase = AssistantPhase::Translating;
         }

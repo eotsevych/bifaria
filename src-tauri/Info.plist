@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDisplayName</key>
-    <string>RevFly</string>
+    <string>Bifaria</string>
     <key>CFBundleName</key>
-    <string>RevFly</string>
+    <string>Bifaria</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>RevFly needs access to the microphone to record speech for transcription and translation.</string>
+    <string>Bifaria needs access to the microphone to record speech for transcription and translation.</string>
     <key>CFBundleIconFile</key>
     <string>icon.icns</string>
     <key>LSUIElement</key>

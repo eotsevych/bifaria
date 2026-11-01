@@ -5,10 +5,10 @@ use tauri::tray::{TrayIcon, TrayIconBuilder};
 use crate::audio::{list_input_devices, list_output_devices};
 use crate::settings::AppSettings;
 
-/// Windows that make RevFly behave like a regular app while they're open.
+/// Windows that make Bifaria behave like a regular app while they're open.
 const DOCK_WINDOWS: [&str; 3] = ["preferences", "onboarding", "whats-new"];
 
-/// RevFly lives in the menu bar, but while Settings or the welcome guide is open it shows in the Dock
+/// Bifaria lives in the menu bar, but while Settings or the welcome guide is open it shows in the Dock
 /// and Cmd+Tab like a normal app, so those windows are easy to get back to. `closing` names a window
 /// that is going away but may still be registered.
 pub fn sync_dock_icon(app: &AppHandle, closing: Option<&str>) {
@@ -108,7 +108,7 @@ pub fn open_onboarding(app: &AppHandle) {
     }
     // A borderless rounded card (the page draws it), so the window itself is transparent.
     let builder = WebviewWindowBuilder::new(app, "onboarding", WebviewUrl::App("index.html#onboarding".into()))
-        .title("Welcome to RevFly")
+        .title("Welcome to Bifaria")
         .inner_size(560.0, 510.0)
         .resizable(false)
         .maximizable(false)
@@ -136,7 +136,7 @@ pub fn open_onboarding(app: &AppHandle) {
     }
 }
 
-/// Opens the "What's New in RevFly" announcement modal, or brings it forward if it's already open.
+/// Opens the "What's New in Bifaria" announcement modal, or brings it forward if it's already open.
 pub fn open_whats_new(app: &AppHandle) {
     if let Some(win) = app.get_webview_window("whats-new") {
         let _ = win.unminimize();
@@ -146,7 +146,7 @@ pub fn open_whats_new(app: &AppHandle) {
         return;
     }
     let builder = WebviewWindowBuilder::new(app, "whats-new", WebviewUrl::App("index.html#whats-new".into()))
-        .title("What's New in RevFly")
+        .title("What's New in Bifaria")
         .inner_size(540.0, 620.0)
         .resizable(false)
         .maximizable(false)
@@ -206,9 +206,9 @@ pub fn update_tray_icon(app: &AppHandle, state: TrayIconState) {
             let _ = tray.set_icon_as_template(is_template);
         }
         let tip = match state {
-            TrayIconState::Recording => "RevFly — Recording in progress…",
-            TrayIconState::Loaded => "RevFly — Speech Model Active in RAM",
-            TrayIconState::Ejected => "RevFly — Sleeping (RAM Saved)",
+            TrayIconState::Recording => "Bifaria — Recording in progress…",
+            TrayIconState::Loaded => "Bifaria — Speech Model Active in RAM",
+            TrayIconState::Ejected => "Bifaria — Sleeping (RAM Saved)",
         };
         let _ = tray.set_tooltip(Some(tip));
         #[cfg(target_os = "macos")]
@@ -547,7 +547,7 @@ pub fn create_tray(app: &AppHandle, settings: &AppSettings) -> Result<TrayIcon, 
     let pref_item = MenuItem::with_id(app, "preferences", "Settings...", true, None::<&str>)?;
     let guide_item = MenuItem::with_id(app, "onboarding", "Welcome Guide…", true, None::<&str>)?;
     let sep3 = PredefinedMenuItem::separator(app)?;
-    let quit_item = MenuItem::with_id(app, "quit", "Quit RevFly", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "Quit Bifaria", true, None::<&str>)?;
 
     let menu = Menu::with_items(app, &[
         &status_item,
@@ -571,7 +571,7 @@ pub fn create_tray(app: &AppHandle, settings: &AppSettings) -> Result<TrayIcon, 
     let mut builder = TrayIconBuilder::with_id("main-tray")
         .menu(&menu)
         .show_menu_on_left_click(true)
-        .tooltip("RevFly — LLM Ejected (RAM Saved)")
+        .tooltip("Bifaria — LLM Ejected (RAM Saved)")
         .icon_as_template(SLEEPING_ICON_IS_TEMPLATE)
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();

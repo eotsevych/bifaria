@@ -1,4 +1,4 @@
-//! Command-line control of a running RevFly: `revfly --toggle`, `--translate`, `--cancel`.
+//! Command-line control of a running Bifaria: `revfly --toggle`, `--translate`, `--cancel`.
 //!
 //! Wayland doesn't let apps register global hotkeys, so there the desktop's own shortcut settings
 //! run these commands instead. A second `revfly` process hands its arguments to the running one
@@ -7,13 +7,13 @@
 pub const USAGE: &str = "\
 Usage: revfly [COMMAND]
 
-Commands for a running RevFly (for example from a desktop keyboard shortcut):
+Commands for a running Bifaria (for example from a desktop keyboard shortcut):
   --toggle      Start or stop a recording, like the main hotkey
   --translate   Start or stop a recording that is translated, like the translate hotkey
   --cancel      Cancel the recording or transcription in progress
   --help        Show this help
 
-Without a command, RevFly starts, or opens Settings if it's already running.";
+Without a command, Bifaria starts, or opens Settings if it's already running.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CliCommand {

@@ -747,7 +747,7 @@ export interface AppleLanguagePack {
   status: "installed" | "supported" | "unsupported";
 }
 
-/** Apple's language packs for translating into `targetLang` (a RevFly language name), or the
+/** Apple's language packs for translating into `targetLang` (a Bifaria language name), or the
  * Offline provider's with `offline`. Throws when they can't be listed. */
 export async function fetchAppleLanguagePacks(
   targetLang: string,
@@ -856,7 +856,7 @@ export async function triggerSaveLabCustomAudio(
   }
 }
 
-/** Whether RevFly opens when you log in (the system login item, not a saved setting). */
+/** Whether Bifaria opens when you log in (the system login item, not a saved setting). */
 export async function getLaunchAtLogin(): Promise<boolean> {
   if (!isTauri()) return false;
   try {

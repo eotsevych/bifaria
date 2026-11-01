@@ -62,7 +62,7 @@ const NEURAL_ENGINE: ModelFiles = ModelFiles {
     url: "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml/resolve/main",
 };
 
-/// The helper that runs the Neural Engine build, bundled next to the RevFly executable.
+/// The helper that runs the Neural Engine build, bundled next to the Bifaria executable.
 const ANE_HELPER: &str = "revfly-asr";
 
 impl ModelFiles {

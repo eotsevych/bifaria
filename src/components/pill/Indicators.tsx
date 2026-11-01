@@ -44,8 +44,8 @@ const CLASSIC_WAVE: WaveSize = {
   growth: BAR_GROWTH,
 };
 
-const GRADIENT_QUIET = ["#6468da", "#389aff", "#04caff"] as const;
-const GRADIENT_LOUD = ["#8f6bff", "#4aa3ff", "#1ae4ff"] as const;
+const GRADIENT_QUIET = ["#9a8cff", "#7c6fff", "#5b4fd6"] as const;
+const GRADIENT_LOUD = ["#c4b8ff", "#a593ff", "#7c6fff"] as const;
 
 /** Energy for bar `i` of `count`, interpolated across the backend's bands. */
 function bandAt(bands: number[], i: number, count: number): number {
@@ -359,7 +359,7 @@ export type MicDownMode = "reconnecting" | "down";
 
 /**
  * Shown instead of the sound wave when the microphone stops delivering sound mid-recording: the seven
- * bars lie flat and dimmed with a strike through them. While RevFly reopens the mic they pulse one
+ * bars lie flat and dimmed with a strike through them. While Bifaria reopens the mic they pulse one
  * after another; once it gives up they stay still.
  */
 export function MicDownIndicator({ mode, accent }: { mode: MicDownMode; accent: string }) {

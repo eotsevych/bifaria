@@ -1,7 +1,7 @@
 //! Sends Ctrl+V on Linux through the desktop's own input tools.
 //!
 //! enigo injects keys through X11's XTest, which on Wayland reaches only XWayland windows: in
-//! native Wayland apps nothing is pasted and no error is reported. So RevFly first tries the
+//! native Wayland apps nothing is pasted and no error is reported. So Bifaria first tries the
 //! command-line tools that work there, in the order that works best on each desktop, and only
 //! then falls back to enigo.
 //!
@@ -15,7 +15,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 
-/// The display server and desktop RevFly runs in.
+/// The display server and desktop Bifaria runs in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Session {
     pub wayland: bool,

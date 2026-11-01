@@ -9,7 +9,7 @@ import {
 import { FormLabel, FormGroup, FieldSelect } from "./SettingsPrimitives";
 import { useSettingsContext } from "./useSettingsContext";
 
-// Codes Apple uses for the spoken languages RevFly offers.
+// Codes Apple uses for the spoken languages Bifaria offers.
 const LANG_CODES: Record<string, string> = {
   English: "en",
   Ukrainian: "uk",
@@ -210,7 +210,7 @@ export default function AppleTranslationPanel({
             })}
           </div>
           <span style={{ ...text(t, 11), marginTop: 4, display: "block" }}>
-            macOS 26.4 and later have both. When only one is downloaded for a language pair, RevFly
+            macOS 26.4 and later have both. When only one is downloaded for a language pair, Bifaria
             uses that one.
           </span>
         </FormGroup>

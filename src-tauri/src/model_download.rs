@@ -119,18 +119,18 @@ pub fn spawn_initial_download(app: &AppHandle, model_name: String) {
     tauri::async_runtime::spawn(async move {
         notify(
             &app,
-            "Setting up RevFly",
+            "Setting up Bifaria",
             "Downloading the speech model in the background. You'll get a notification when it's ready.",
         );
         match ensure(&app, &model_name).await {
-            Ok(_) => notify(&app, "RevFly is ready", "Press your hotkey and start talking."),
+            Ok(_) => notify(&app, "Bifaria is ready", "Press your hotkey and start talking."),
             Err(e) => {
                 log::error!("Initial model download failed: {}", e);
                 let reason: String = e.chars().take(140).collect();
                 notify(
                     &app,
                     "Speech model download failed",
-                    &format!("{}. RevFly will try again the next time you record.", reason),
+                    &format!("{}. Bifaria will try again the next time you record.", reason),
                 );
             }
         }

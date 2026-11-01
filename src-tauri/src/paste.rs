@@ -134,11 +134,11 @@ fn paste(text: &str) -> Result<Option<String>, String> {
         const K_VK_ANSI_V: u16 = 0x09;
 
         // Without Accessibility macOS drops the keys silently. A new signing certificate also
-        // voids the old grant, even though Settings still shows RevFly switched on.
+        // voids the old grant, even though Settings still shows Bifaria switched on.
         if !crate::global_key_listener::is_accessibility_trusted() {
             static PROMPT: std::sync::Once = std::sync::Once::new();
             PROMPT.call_once(crate::global_key_listener::request_accessibility_prompt);
-            return Err("Turn on RevFly in Privacy & Security → Accessibility (remove it and add it again if it's already on). The text is on the clipboard.".to_string());
+            return Err("Turn on Bifaria in Privacy & Security → Accessibility (remove it and add it again if it's already on). The text is on the clipboard.".to_string());
         }
 
         unsafe {
@@ -176,7 +176,7 @@ fn paste(text: &str) -> Result<Option<String>, String> {
         };
         enigo_ctrl_v().map_err(|e| {
             let why = tool_problem.as_deref().map(|t| format!("{t}; {e}")).unwrap_or(e);
-            format!("The text is on the clipboard: press Ctrl+V. RevFly couldn't send the paste keys ({why}).")
+            format!("The text is on the clipboard: press Ctrl+V. Bifaria couldn't send the paste keys ({why}).")
         })?;
         // On Wayland, enigo's keys reach only XWayland apps.
         if session.wayland && take_wayland_note() {
@@ -191,7 +191,7 @@ fn paste(text: &str) -> Result<Option<String>, String> {
 
     #[cfg(target_os = "windows")]
     {
-        enigo_ctrl_v().map_err(|e| format!("The text is on the clipboard: press Ctrl+V. RevFly couldn't send the paste keys ({e})."))?;
+        enigo_ctrl_v().map_err(|e| format!("The text is on the clipboard: press Ctrl+V. Bifaria couldn't send the paste keys ({e})."))?;
         Ok(None)
     }
 }
