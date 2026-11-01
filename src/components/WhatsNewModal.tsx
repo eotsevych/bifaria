@@ -282,11 +282,11 @@ export function WhatsNewModal() {
             color: p.text,
           }}
         >
-          The biggest Bifaria update yet
+          RevFly is now Bifaria
         </h1>
         <p style={{ margin: 0, fontSize: 13, lineHeight: 1.45, color: p.body }}>
-          Translation without the internet on every computer, faster transcription on your
-          computer&apos;s own chips, and more privacy.
+          A new name and icon, the same app and your same settings. Dictation is violet and
+          translation is orange, like Bifaria on iPhone. And it&apos;s the biggest update yet:
         </p>
       </div>
 
