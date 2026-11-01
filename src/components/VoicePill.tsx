@@ -31,7 +31,7 @@ const STATE_META: Record<
 
 /** How many recordings show "Press … to finish" after install or after a hotkey changes. */
 const FINISH_HINT_RECORDINGS = 3;
-const FINISH_HINT_KEY = "revfly_finish_hint";
+const FINISH_HINT_KEY = "bifaria_finish_hint";
 
 /** Whether this recording shows the finish hint; counts it if so. The count restarts whenever
  * either hotkey changes, so a new key is explained a few times too. */
@@ -154,7 +154,8 @@ export function VoicePill() {
   useEffect(() => setBarVoiceScale(settings?.bar_scale), [settings?.bar_scale]);
 
   const themeMode: Theme = useResolvedTheme(settings?.theme);
-  const accentKey: AccentColor = (localStorage.getItem("revfly_accent") as AccentColor) || "violet";
+  const accentKey: AccentColor =
+    (localStorage.getItem("bifaria_accent") as AccentColor) || "violet";
   const t = tok(themeMode, accentKey);
   const micWarning = state.state === "listening" && state.warning === true;
   // A recording started with the translate hotkey stays orange until it's done; automatic

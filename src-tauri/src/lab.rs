@@ -554,7 +554,7 @@ pub async fn run_experiment(
 mod tests {
     #[test]
     fn decodes_a_stereo_wav_to_mono_at_its_own_rate() {
-        let path = std::env::temp_dir().join(format!("revfly_lab_stereo_{}.wav", std::process::id()));
+        let path = std::env::temp_dir().join(format!("bifaria_lab_stereo_{}.wav", std::process::id()));
         let spec = hound::WavSpec { channels: 2, sample_rate: 44100, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
         let mut w = hound::WavWriter::create(&path, spec).unwrap();
         for _ in 0..4410 {
@@ -571,29 +571,29 @@ mod tests {
 
     #[test]
     fn a_file_that_isnt_audio_is_refused_with_the_formats_that_work() {
-        let path = std::env::temp_dir().join(format!("revfly_lab_not_audio_{}.mp3", std::process::id()));
+        let path = std::env::temp_dir().join(format!("bifaria_lab_not_audio_{}.mp3", std::process::id()));
         std::fs::write(&path, b"definitely not audio").unwrap();
         let err = super::decode_audio_file(&path).unwrap_err();
         let _ = std::fs::remove_file(&path);
         assert!(err.contains("MP3"), "{err}");
     }
 
-    /// Decodes a real file: `REVFLY_AUDIO=path cargo test --lib real_audio -- --ignored --nocapture`.
+    /// Decodes a real file: `BIFARIA_AUDIO=path cargo test --lib real_audio -- --ignored --nocapture`.
     #[test]
     #[ignore]
     fn real_audio_file_decodes() {
-        let path = std::env::var("REVFLY_AUDIO").expect("set REVFLY_AUDIO to an audio file");
+        let path = std::env::var("BIFARIA_AUDIO").expect("set BIFARIA_AUDIO to an audio file");
         let (samples, rate) = super::decode_audio_file(std::path::Path::new(&path)).unwrap();
         println!("{} Hz, {:.2} s (header: {:?} s)", rate, samples.len() as f32 / rate as f32, super::audio_duration_sec(std::path::Path::new(&path)));
         assert!(!samples.is_empty());
     }
 
     /// A real file through decoding, chunking and Parakeet, chunked and whole:
-    /// `REVFLY_AUDIO=path cargo test --release --lib chunked_file -- --ignored --nocapture`.
+    /// `BIFARIA_AUDIO=path cargo test --release --lib chunked_file -- --ignored --nocapture`.
     #[test]
     #[ignore]
     fn chunked_file_transcribes_like_the_whole_file() {
-        let path = std::env::var("REVFLY_AUDIO").expect("set REVFLY_AUDIO to an audio file");
+        let path = std::env::var("BIFARIA_AUDIO").expect("set BIFARIA_AUDIO to an audio file");
         let (samples, rate) = super::decode_audio_file(std::path::Path::new(&path)).unwrap();
         let samples = crate::audio::resample_to_16k(&samples, rate);
         let chunks: Vec<_> = crate::vad::plan_chunks(&samples).into_iter().map(|c| c.range).collect();

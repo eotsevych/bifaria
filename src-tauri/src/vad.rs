@@ -170,11 +170,11 @@ pub fn has_speech(samples: &[f32]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    /// Plans chunks for a real recording: `REVFLY_WAV=path cargo test --lib real_recording -- --ignored --nocapture`.
+    /// Plans chunks for a real recording: `BIFARIA_WAV=path cargo test --lib real_recording -- --ignored --nocapture`.
     #[test]
     #[ignore]
     fn real_recording_chunks_cover_it_in_pieces_of_at_most_40_s() {
-        let path = std::env::var("REVFLY_WAV").expect("set REVFLY_WAV to a recording");
+        let path = std::env::var("BIFARIA_WAV").expect("set BIFARIA_WAV to a recording");
         let (samples, rate) = crate::lab::read_wav_file(std::path::Path::new(&path)).unwrap();
         let samples = crate::audio::resample_to_16k(&samples, rate);
         let vad = super::trim_silence(&samples, 16000);

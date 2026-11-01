@@ -1,11 +1,11 @@
-//! Command-line control of a running Bifaria: `revfly --toggle`, `--translate`, `--cancel`.
+//! Command-line control of a running Bifaria: `bifaria --toggle`, `--translate`, `--cancel`.
 //!
 //! Wayland doesn't let apps register global hotkeys, so there the desktop's own shortcut settings
-//! run these commands instead. A second `revfly` process hands its arguments to the running one
+//! run these commands instead. A second `bifaria` process hands its arguments to the running one
 //! (tauri-plugin-single-instance) and exits.
 
 pub const USAGE: &str = "\
-Usage: revfly [COMMAND]
+Usage: bifaria [COMMAND]
 
 Commands for a running Bifaria (for example from a desktop keyboard shortcut):
   --toggle      Start or stop a recording, like the main hotkey

@@ -499,7 +499,7 @@ fn get_parakeet_engine() -> String {
     parakeet::ParakeetTranscriber::engine_label()
 }
 
-/// Runs a command from a second `revfly` process (see cli.rs) in this one.
+/// Runs a command from a second `bifaria` process (see cli.rs) in this one.
 fn handle_cli(app: &AppHandle, args: &[String]) {
     let Some(state) = app.try_state::<AppState>() else {
         return;
@@ -527,6 +527,7 @@ pub fn run() {
         println!("{}", cli::USAGE);
         return;
     }
+    settings::import_from_revfly();
 
     tauri::Builder::default()
         // Must be the first plugin, so a second launch exits before anything else starts.

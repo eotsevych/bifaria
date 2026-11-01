@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     fn finds_direct_and_english_pivot_routes_on_disk() {
-        let root = std::env::temp_dir().join(format!("revfly-offline-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("bifaria-offline-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let cache = Cache::with_root(&root);
         assert!(cached_legs(&cache, "uk", "en").is_none());
@@ -306,7 +306,7 @@ mod tests {
     #[test]
     #[ignore]
     fn offline_translates_ukrainian_and_english_both_ways() {
-        let root = std::env::temp_dir().join(format!("revfly-offline-models-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("bifaria-offline-models-{}", std::process::id()));
         let cache = Cache::with_root(&root);
         for (src, trg) in [("uk", "en"), ("en", "uk")] {
             fxtranslate::loader::ensure_route_files(&mirror(), &cache, src, trg).unwrap();

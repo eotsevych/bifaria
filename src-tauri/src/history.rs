@@ -351,7 +351,7 @@ mod tests {
 
     #[test]
     fn retention_drops_only_entries_older_than_the_limit() {
-        let dir = std::env::temp_dir().join(format!("revfly_history_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("bifaria_history_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let history = HistoryManager::new_in(&dir).unwrap();
         let mut settings = AppSettings::default();

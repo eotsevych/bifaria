@@ -31,8 +31,8 @@ export function applyTheme(mode: ThemeMode) {
 
 export async function broadcastTheme(mode: ThemeMode) {
   if (typeof window !== "undefined") {
-    localStorage.setItem("revfly_theme", mode);
-    window.dispatchEvent(new CustomEvent("revfly-theme-updated", { detail: mode }));
+    localStorage.setItem("bifaria_theme", mode);
+    window.dispatchEvent(new CustomEvent("bifaria-theme-updated", { detail: mode }));
   }
   applyTheme(mode);
 
@@ -51,11 +51,11 @@ export function initThemeListener(onThemeChanged?: () => void) {
   // Listen to OS system theme changes
   const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
   const osListener = () => {
-    const saved = (localStorage.getItem("revfly_theme") as ThemeMode) || "system";
+    const saved = (localStorage.getItem("bifaria_theme") as ThemeMode) || "system";
     if (saved === "system") {
       applyTheme("system");
       onThemeChanged?.();
-      window.dispatchEvent(new CustomEvent("revfly-theme-updated", { detail: "system" }));
+      window.dispatchEvent(new CustomEvent("bifaria-theme-updated", { detail: "system" }));
     }
   };
   mediaQuery.addEventListener("change", osListener);
@@ -65,10 +65,10 @@ export function initThemeListener(onThemeChanged?: () => void) {
   if (isTauri()) {
     listen<ThemeMode>("theme-changed", (event) => {
       if (event.payload) {
-        localStorage.setItem("revfly_theme", event.payload);
+        localStorage.setItem("bifaria_theme", event.payload);
         applyTheme(event.payload);
         onThemeChanged?.();
-        window.dispatchEvent(new CustomEvent("revfly-theme-updated", { detail: event.payload }));
+        window.dispatchEvent(new CustomEvent("bifaria-theme-updated", { detail: event.payload }));
       }
     }).then((unlisten) => {
       unlistenTauri = unlisten;
@@ -95,11 +95,11 @@ export function useResolvedTheme(themeSetting?: string | null): "dark" | "light"
     };
 
     mediaQuery.addEventListener("change", handler);
-    window.addEventListener("revfly-theme-updated", handler);
+    window.addEventListener("bifaria-theme-updated", handler);
 
     return () => {
       mediaQuery.removeEventListener("change", handler);
-      window.removeEventListener("revfly-theme-updated", handler);
+      window.removeEventListener("bifaria-theme-updated", handler);
     };
   }, [themeSetting]);
 

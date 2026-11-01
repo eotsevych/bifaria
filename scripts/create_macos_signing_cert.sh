@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# One-time setup: creates a free self-signed code-signing certificate for RevFly.
+# One-time setup: creates a free self-signed code-signing certificate for Bifaria.
 #
 # Why: ad-hoc signatures change on every build, so macOS forgets the Microphone and
 # Accessibility permissions after each update. Signing every build with the same
 # certificate keeps them. (This does not remove the Gatekeeper warning; see INSTALL.md.)
 #
-# Output (kept outside the repo, in ~/.revfly-signing/):
-#   revfly-signing.p12      certificate + private key; back it up, every future build must use it
-#   revfly-signing.p12.b64  paste into the GitHub secret MACOS_SIGNING_P12
+# Output (kept outside the repo, in ~/.bifaria-signing/):
+#   bifaria-signing.p12      certificate + private key; back it up, every future build must use it
+#   bifaria-signing.p12.b64  paste into the GitHub secret MACOS_SIGNING_P12
 #   p12-password.txt        paste into the GitHub secret MACOS_SIGNING_P12_PASSWORD
 #
 # Set KEYCHAIN to import somewhere other than the login keychain.
 set -euo pipefail
 
-CERT_NAME="RevFly Self-Signed"
-OUT_DIR="${REVFLY_SIGNING_DIR:-$HOME/.revfly-signing}"
+CERT_NAME="Bifaria Self-Signed"
+OUT_DIR="${BIFARIA_SIGNING_DIR:-$HOME/.bifaria-signing}"
 KEYCHAIN="${KEYCHAIN:-$HOME/Library/Keychains/login.keychain-db}"
 
 if security find-identity -p codesigning "$KEYCHAIN" 2>/dev/null | grep -q "\"$CERT_NAME\""; then
@@ -23,10 +23,10 @@ if security find-identity -p codesigning "$KEYCHAIN" 2>/dev/null | grep -q "\"$C
   exit 0
 fi
 
-if [ -e "$OUT_DIR/revfly-signing.p12" ]; then
-  echo "Error: $OUT_DIR/revfly-signing.p12 already exists but is not in the keychain."
+if [ -e "$OUT_DIR/bifaria-signing.p12" ]; then
+  echo "Error: $OUT_DIR/bifaria-signing.p12 already exists but is not in the keychain."
   echo "Import it instead of creating a new one (a new certificate resets users' permissions once):"
-  echo "  security import \"$OUT_DIR/revfly-signing.p12\" -k \"$KEYCHAIN\" -P \"\$(cat \"$OUT_DIR/p12-password.txt\")\" -T /usr/bin/codesign"
+  echo "  security import \"$OUT_DIR/bifaria-signing.p12\" -k \"$KEYCHAIN\" -P \"\$(cat \"$OUT_DIR/p12-password.txt\")\" -T /usr/bin/codesign"
   exit 1
 fi
 
@@ -61,18 +61,18 @@ PASSWORD="$(openssl rand -hex 24)"
 # LibreSSL (the macOS system openssl) has no -legacy flag and already writes the old format.
 if ! openssl pkcs12 -export -legacy -name "$CERT_NAME" \
   -inkey "$WORK/key.pem" -in "$WORK/cert.pem" \
-  -out "$OUT_DIR/revfly-signing.p12" -passout "pass:$PASSWORD" 2>/dev/null; then
+  -out "$OUT_DIR/bifaria-signing.p12" -passout "pass:$PASSWORD" 2>/dev/null; then
   openssl pkcs12 -export -name "$CERT_NAME" \
     -inkey "$WORK/key.pem" -in "$WORK/cert.pem" \
-    -out "$OUT_DIR/revfly-signing.p12" -passout "pass:$PASSWORD"
+    -out "$OUT_DIR/bifaria-signing.p12" -passout "pass:$PASSWORD"
 fi
 
 printf '%s' "$PASSWORD" > "$OUT_DIR/p12-password.txt"
-base64 -i "$OUT_DIR/revfly-signing.p12" > "$OUT_DIR/revfly-signing.p12.b64"
+base64 -i "$OUT_DIR/bifaria-signing.p12" > "$OUT_DIR/bifaria-signing.p12.b64"
 chmod 600 "$OUT_DIR"/*
 
 echo "--> Importing into $KEYCHAIN..."
-security import "$OUT_DIR/revfly-signing.p12" -k "$KEYCHAIN" -P "$PASSWORD" -T /usr/bin/codesign >/dev/null
+security import "$OUT_DIR/bifaria-signing.p12" -k "$KEYCHAIN" -P "$PASSWORD" -T /usr/bin/codesign >/dev/null
 
 SHA="$(security find-identity -p codesigning "$KEYCHAIN" | awk -v name="\"$CERT_NAME\"" 'index($0, name) {print $2; exit}')"
 
@@ -84,7 +84,7 @@ echo ""
 echo "Next steps:"
 echo "  1. Back up $OUT_DIR (e.g. in a password manager). Losing it means users grant permissions again."
 echo "  2. For GitHub Actions, add two repository secrets:"
-echo "       MACOS_SIGNING_P12           = contents of $OUT_DIR/revfly-signing.p12.b64"
+echo "       MACOS_SIGNING_P12           = contents of $OUT_DIR/bifaria-signing.p12.b64"
 echo "       MACOS_SIGNING_P12_PASSWORD  = contents of $OUT_DIR/p12-password.txt"
-echo "     e.g.  gh secret set MACOS_SIGNING_P12 < \"$OUT_DIR/revfly-signing.p12.b64\""
+echo "     e.g.  gh secret set MACOS_SIGNING_P12 < \"$OUT_DIR/bifaria-signing.p12.b64\""
 echo "           gh secret set MACOS_SIGNING_P12_PASSWORD < \"$OUT_DIR/p12-password.txt\""

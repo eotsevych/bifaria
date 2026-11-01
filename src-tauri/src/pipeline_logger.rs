@@ -92,7 +92,7 @@ impl TranscriptionDiagnosticLog {
         };
 
         format!(
-            "\n┌──────────────────── REVFLY TRANSCRIPTION REPORT ────────────────────┐\n\
+            "\n┌──────────────────── BIFARIA TRANSCRIPTION REPORT ────────────────────┐\n\
              │ Run ID:       #{:<53} │\n\
              │ Timestamp:    {:<55} │\n\
              │ Total Time:   {:<55} │\n\

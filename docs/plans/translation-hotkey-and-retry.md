@@ -8,7 +8,7 @@ The tray menu item "Retry Last Translation" (`src-tauri/src/tray.rs`) and the pi
 "↻ Retry translation" button both call `AppController::retry_translation`
 (`src-tauri/src/app_controller.rs`).
 
-- When a dictation's **service translation** (LLM / API provider) fails, RevFly pastes the
+- When a dictation's **service translation** (LLM / API provider) fails, Bifaria pastes the
   untranslated text instead and stores a `PendingRetry` (the text sent for translation, the
   detected source language, and the history row id). The tray item becomes enabled.
 - Retrying sends that same text to the translation provider again, using the *current* settings,

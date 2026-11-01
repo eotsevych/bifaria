@@ -308,9 +308,9 @@ impl Default for AppSettings {
 
 pub fn get_config_dir() -> PathBuf {
     if let Some(base) = dirs::config_dir() {
-        base.join("revfly")
+        base.join("bifaria")
     } else {
-        PathBuf::from(".revfly")
+        PathBuf::from(".bifaria")
     }
 }
 
@@ -325,10 +325,52 @@ pub fn is_private(storage_mode: &str) -> bool {
 
 pub fn get_data_dir() -> PathBuf {
     if let Some(base) = dirs::data_dir() {
-        base.join("revfly")
+        base.join("bifaria")
     } else {
-        PathBuf::from(".revfly-data")
+        PathBuf::from(".bifaria-data")
     }
+}
+
+/// Bifaria started as RevFly. On its first run it copies RevFly's settings, history, recordings and
+/// models, so nothing has to be set up or downloaded again. RevFly's own folders are left as they are.
+pub fn import_from_revfly() {
+    for (base, new) in [(dirs::config_dir(), get_config_dir()), (dirs::data_dir(), get_data_dir())] {
+        let Some(old) = base.map(|b| b.join("revfly")) else { continue };
+        if let Err(e) = import_dir(&old, &new) {
+            eprintln!("Couldn't import RevFly's files from {}: {e}", old.display());
+        }
+    }
+}
+
+/// Copies `old` to `new` unless `new` already exists. It copies into a temporary folder first, so an
+/// interrupted copy is tried again on the next launch instead of leaving half the files.
+fn import_dir(old: &Path, new: &Path) -> std::io::Result<bool> {
+    if new.exists() || !old.is_dir() {
+        return Ok(false);
+    }
+    let tmp = new.with_extension("importing");
+    let _ = fs::remove_dir_all(&tmp);
+    copy_dir(old, &tmp).inspect_err(|_| {
+        let _ = fs::remove_dir_all(&tmp);
+    })?;
+    fs::rename(&tmp, new)?;
+    Ok(true)
+}
+
+/// Recursive copy. On macOS `fs::copy` clones files on APFS, so large models take no extra space.
+fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        let target = to.join(entry.file_name());
+        if kind.is_dir() {
+            copy_dir(&entry.path(), &target)?;
+        } else if kind.is_file() {
+            fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
 }
 
 /// Settings saved before 1.0.5 had one `sound_effect` switch for every sound; it becomes the
@@ -444,6 +486,26 @@ impl AppSettings {
 mod tests {
     use super::AppSettings;
 
+    #[test]
+    fn revfly_files_are_copied_once_and_kept() {
+        let root = std::env::temp_dir().join(format!("bifaria_import_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (old, new) = (root.join("revfly"), root.join("bifaria"));
+        std::fs::create_dir_all(old.join("models")).unwrap();
+        std::fs::write(old.join("settings.json"), "{}").unwrap();
+        std::fs::write(old.join("models/m.bin"), "weights").unwrap();
+
+        assert!(super::import_dir(&old, &new).unwrap());
+        assert_eq!(std::fs::read_to_string(new.join("models/m.bin")).unwrap(), "weights");
+        assert!(old.join("settings.json").exists(), "RevFly's files stay");
+        assert!(!new.with_extension("importing").exists());
+
+        std::fs::write(new.join("settings.json"), "{\"changed\":true}").unwrap();
+        assert!(!super::import_dir(&old, &new).unwrap(), "an existing Bifaria folder is never overwritten");
+        assert!(std::fs::read_to_string(new.join("settings.json")).unwrap().contains("changed"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     fn legacy(provider: &str, translate_hotkey: &str) -> AppSettings {
         let mut s = AppSettings::default();
         s.translation_mode = String::new();
@@ -522,7 +584,7 @@ mod tests {
 
     #[test]
     fn unreadable_settings_are_kept_aside_and_saves_are_whole() {
-        let dir = std::env::temp_dir().join(format!("revfly_settings_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("bifaria_settings_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("settings.json");

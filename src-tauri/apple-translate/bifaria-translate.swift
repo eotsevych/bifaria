@@ -1,10 +1,10 @@
-// revfly-translate: translates text with Apple's on-device Translation framework for RevFly.
+// bifaria-translate: translates text with Apple's on-device Translation framework for Bifaria.
 // Needs macOS 26+ (TranslationSession(installedSource:target:) translates without a SwiftUI view).
 // Built by scripts/build_apple_translate.sh (run from src-tauri/build.rs) and bundled as a Tauri
-// sidecar next to the RevFly executable.
+// sidecar next to the Bifaria executable.
 //
 // Worker mode (no arguments): reads one JSON request per line on stdin and writes one JSON response
-// per line on stdout, in order. RevFly keeps one worker running so the language model stays warm.
+// per line on stdout, in order. Bifaria keeps one worker running so the language model stays warm.
 //   {"op":"ping"}                                           → {"ok":true,"os":"26.1","protocol":1}
 //   {"op":"status","source":"uk","target":"en"}             → {"ok":true,"status":"installed|supported|unsupported"}
 //   {"op":"languages","target":"en"}                        → {"ok":true,"languages":[{"code","name","status"}]}
@@ -20,7 +20,7 @@
 // lowLatency when absent). Failures are
 //   {"ok":false,"error":"not_installed|unsupported|unable_to_identify|nothing_to_translate|bad_request|internal","message":…}
 //
-// Download mode: `revfly-translate download <source> <target> [model]` opens a small window that asks
+// Download mode: `bifaria-translate download <source> <target> [model]` opens a small window that asks
 // macOS to download the language pair (Apple's own download prompt), then prints one JSON line
 // ({"ok":true}, or an error; "cancelled" when the window is closed) and exits.
 //
@@ -67,11 +67,11 @@ enum Model: String {
     case highFidelity, lowLatency
 }
 
-/// The models to try, preferred first. REVFLY_TRANSLATE_MODEL=highFidelity|lowLatency limits it to
+/// The models to try, preferred first. BIFARIA_TRANSLATE_MODEL=highFidelity|lowLatency limits it to
 /// one (the smoke test uses it to reach a pair that isn't downloaded).
 func candidateModels(_ preferred: Model?) -> [Model?] {
     guard #available(macOS 26.4, *) else { return [nil] }
-    if let forced = ProcessInfo.processInfo.environment["REVFLY_TRANSLATE_MODEL"].flatMap(Model.init(rawValue:)) {
+    if let forced = ProcessInfo.processInfo.environment["BIFARIA_TRANSLATE_MODEL"].flatMap(Model.init(rawValue:)) {
         return [forced]
     }
     return preferred == .highFidelity ? [.highFidelity, .lowLatency] : [.lowLatency, .highFidelity]
@@ -156,7 +156,7 @@ func detectLanguage(_ text: String) -> String? {
     return lang.rawValue
 }
 
-/// Maps the framework's errors to the codes RevFly shows reasons for.
+/// Maps the framework's errors to the codes Bifaria shows reasons for.
 func describe(_ error: Error, source: String, target: String) -> [String: Any] {
     let pair = "\(source) → \(target)"
     if TranslationError.notInstalled ~= error {
@@ -371,7 +371,7 @@ func runWorker() async {
             emit(await handle(request))
         }
     } catch {
-        FileHandle.standardError.write(Data("revfly-translate: reading stdin failed: \(error)\n".utf8))
+        FileHandle.standardError.write(Data("bifaria-translate: reading stdin failed: \(error)\n".utf8))
     }
 }
 
@@ -463,7 +463,7 @@ final class DownloadDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false)
-        window.title = "RevFly — Translation Languages"
+        window.title = "Bifaria — Translation Languages"
         window.isReleasedWhenClosed = false
         window.delegate = self
         let pair = "\(displayName(from)) → \(displayName(to))"
@@ -482,7 +482,7 @@ final class DownloadDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
 let arguments = Array(CommandLine.arguments.dropFirst())
 if arguments.first == "download" {
     guard arguments.count == 3 || arguments.count == 4 else {
-        emit(failure("bad_request", "usage: revfly-translate download <source> <target> [lowLatency|highFidelity]"))
+        emit(failure("bad_request", "usage: bifaria-translate download <source> <target> [lowLatency|highFidelity]"))
         exit(2)
     }
     MainActor.assumeIsolated {

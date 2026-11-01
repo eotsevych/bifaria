@@ -2,53 +2,53 @@
 # Shared macOS code-signing helpers. Source this file; do not execute it.
 #
 # Signing identity, in order of preference:
-#   1. REVFLY_SIGN_IDENTITY (certificate name or SHA-1), optionally with REVFLY_SIGN_KEYCHAIN.
+#   1. BIFARIA_SIGN_IDENTITY (certificate name or SHA-1), optionally with BIFARIA_SIGN_KEYCHAIN.
 #   2. A "Developer ID Application" certificate, if installed: the only one Gatekeeper trusts.
-#   3. The "RevFly Self-Signed" certificate from scripts/create_macos_signing_cert.sh, if installed.
+#   3. The "Bifaria Self-Signed" certificate from scripts/create_macos_signing_cert.sh, if installed.
 #   4. Ad-hoc ("-"): builds still work, but macOS asks for Microphone/Accessibility again after every update.
 #
 # A stable identity (1-3) keeps permissions across updates because macOS pins them to the certificate.
-# Only a Developer ID build, notarized with revfly_notarize, opens without the Gatekeeper warning.
+# Only a Developer ID build, notarized with bifaria_notarize, opens without the Gatekeeper warning.
 
-REVFLY_SELF_SIGNED_NAME="RevFly Self-Signed"
-REVFLY_BUNDLE_ID="com.revfly.desktop"
-REVFLY_ENTITLEMENTS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/src-tauri/Entitlements.plist"
+BIFARIA_SELF_SIGNED_NAME="Bifaria Self-Signed"
+BIFARIA_BUNDLE_ID="com.bifaria.desktop"
+BIFARIA_ENTITLEMENTS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/src-tauri/Entitlements.plist"
 
-revfly_resolve_identity() {
-  if [ -n "${REVFLY_SIGN_IDENTITY:-}" ]; then
-    echo "$REVFLY_SIGN_IDENTITY"
+bifaria_resolve_identity() {
+  if [ -n "${BIFARIA_SIGN_IDENTITY:-}" ]; then
+    echo "$BIFARIA_SIGN_IDENTITY"
     return
   fi
   local identities sha
   # No -v: a self-signed certificate is "not trusted", and -v would hide it.
-  identities="$(security find-identity -p codesigning ${REVFLY_SIGN_KEYCHAIN:+"$REVFLY_SIGN_KEYCHAIN"} 2>/dev/null)"
+  identities="$(security find-identity -p codesigning ${BIFARIA_SIGN_KEYCHAIN:+"$BIFARIA_SIGN_KEYCHAIN"} 2>/dev/null)"
   sha="$(awk '/"Developer ID Application: / {print $2; exit}' <<<"$identities")"
-  [ -n "$sha" ] || sha="$(awk -v name="\"$REVFLY_SELF_SIGNED_NAME\"" 'index($0, name) {print $2; exit}' <<<"$identities")"
+  [ -n "$sha" ] || sha="$(awk -v name="\"$BIFARIA_SELF_SIGNED_NAME\"" 'index($0, name) {print $2; exit}' <<<"$identities")"
   echo "${sha:--}"
 }
 
-REVFLY_IDENTITY="$(revfly_resolve_identity)"
-REVFLY_DEVELOPER_ID=0
-if [ "$REVFLY_IDENTITY" != "-" ] && security find-identity -p codesigning ${REVFLY_SIGN_KEYCHAIN:+"$REVFLY_SIGN_KEYCHAIN"} 2>/dev/null \
-  | grep -F "$REVFLY_IDENTITY" | grep -q '"Developer ID Application: '; then
-  REVFLY_DEVELOPER_ID=1
+BIFARIA_IDENTITY="$(bifaria_resolve_identity)"
+BIFARIA_DEVELOPER_ID=0
+if [ "$BIFARIA_IDENTITY" != "-" ] && security find-identity -p codesigning ${BIFARIA_SIGN_KEYCHAIN:+"$BIFARIA_SIGN_KEYCHAIN"} 2>/dev/null \
+  | grep -F "$BIFARIA_IDENTITY" | grep -q '"Developer ID Application: '; then
+  BIFARIA_DEVELOPER_ID=1
 fi
 
-revfly_codesign() {
+bifaria_codesign() {
   # Notarization requires the hardened runtime and a secure timestamp on every binary.
   local extra=()
-  [ "$REVFLY_DEVELOPER_ID" = 1 ] && extra=(--options runtime --timestamp)
-  codesign --force --sign "$REVFLY_IDENTITY" ${REVFLY_SIGN_KEYCHAIN:+--keychain "$REVFLY_SIGN_KEYCHAIN"} "${extra[@]}" "$@"
+  [ "$BIFARIA_DEVELOPER_ID" = 1 ] && extra=(--options runtime --timestamp)
+  codesign --force --sign "$BIFARIA_IDENTITY" ${BIFARIA_SIGN_KEYCHAIN:+--keychain "$BIFARIA_SIGN_KEYCHAIN"} "${extra[@]}" "$@"
 }
 
-revfly_print_identity() {
-  if [ "$REVFLY_IDENTITY" = "-" ]; then
+bifaria_print_identity() {
+  if [ "$BIFARIA_IDENTITY" = "-" ]; then
     echo "--> Signing ad-hoc (no stable identity found; permissions will reset on update)."
     echo "    Run scripts/create_macos_signing_cert.sh once to fix this."
-  elif [ "$REVFLY_DEVELOPER_ID" = 1 ]; then
-    echo "--> Signing with Developer ID: $REVFLY_IDENTITY"
+  elif [ "$BIFARIA_DEVELOPER_ID" = 1 ]; then
+    echo "--> Signing with Developer ID: $BIFARIA_IDENTITY"
   else
-    echo "--> Signing with stable identity: $REVFLY_IDENTITY"
+    echo "--> Signing with stable identity: $BIFARIA_IDENTITY"
   fi
 }
 
@@ -56,9 +56,9 @@ revfly_print_identity() {
 # without a Gatekeeper warning, even offline. Needs a Developer ID identity plus an App Store
 # Connect API key: APPLE_API_KEY (the .p8 file's contents), APPLE_API_KEY_ID and APPLE_API_ISSUER;
 # skipped otherwise.
-revfly_notarize() {
+bifaria_notarize() {
   local target="$1"
-  if [ "$REVFLY_DEVELOPER_ID" != 1 ] || [ -z "${APPLE_API_KEY:-}" ] || [ -z "${APPLE_API_KEY_ID:-}" ] || [ -z "${APPLE_API_ISSUER:-}" ]; then
+  if [ "$BIFARIA_DEVELOPER_ID" != 1 ] || [ -z "${APPLE_API_KEY:-}" ] || [ -z "${APPLE_API_KEY_ID:-}" ] || [ -z "${APPLE_API_ISSUER:-}" ]; then
     echo "--> Skipping notarization of $(basename "$target") (needs Developer ID + APPLE_API_KEY, APPLE_API_KEY_ID, APPLE_API_ISSUER)."
     return 0
   fi
@@ -89,7 +89,7 @@ revfly_notarize() {
 }
 
 # Signs bundled dylibs first, then the app bundle itself.
-revfly_sign_app() {
+bifaria_sign_app() {
   local app="$1"
   [ -d "$app" ] || return 0
   xattr -cr "$app" || true
@@ -97,41 +97,41 @@ revfly_sign_app() {
   if [ -d "$app/Contents/Frameworks" ]; then
     for f in "$app/Contents/Frameworks"/*.dylib; do
       if [ -f "$f" ]; then
-        revfly_codesign "$f"
+        bifaria_codesign "$f"
       fi
     done
   fi
 
-  revfly_sign_bundle --deep "$app"
+  bifaria_sign_bundle --deep "$app"
 
   # The helpers (Apple Translation, Neural Engine speech recognition): --deep above gave them the
   # app's identifier and no hardened runtime. Sign each on its own, then seal the bundle again.
   local helper resigned=""
   for helper in translate asr; do
-    if [ -f "$app/Contents/MacOS/revfly-$helper" ]; then
-      revfly_codesign --options runtime --identifier "$REVFLY_BUNDLE_ID.$helper" "$app/Contents/MacOS/revfly-$helper"
+    if [ -f "$app/Contents/MacOS/bifaria-$helper" ]; then
+      bifaria_codesign --options runtime --identifier "$BIFARIA_BUNDLE_ID.$helper" "$app/Contents/MacOS/bifaria-$helper"
       resigned=1
     fi
   done
   if [ -n "$resigned" ]; then
-    revfly_sign_bundle "$app"
+    bifaria_sign_bundle "$app"
   fi
 }
 
 # Signs the app bundle itself; extra arguments (e.g. --deep) go before the path.
-revfly_sign_bundle() {
-  if [ "$REVFLY_IDENTITY" = "-" ]; then
+bifaria_sign_bundle() {
+  if [ "$BIFARIA_IDENTITY" = "-" ]; then
     # Ad-hoc signatures change every build; an identifier-only requirement is the best that is possible.
-    revfly_codesign "${@:1:$#-1}" --identifier "$REVFLY_BUNDLE_ID" --entitlements "$REVFLY_ENTITLEMENTS" \
-      -r="designated => identifier \"$REVFLY_BUNDLE_ID\"" "${@: -1}"
+    bifaria_codesign "${@:1:$#-1}" --identifier "$BIFARIA_BUNDLE_ID" --entitlements "$BIFARIA_ENTITLEMENTS" \
+      -r="designated => identifier \"$BIFARIA_BUNDLE_ID\"" "${@: -1}"
   else
     # Default designated requirement pins the certificate, so permissions survive updates.
-    revfly_codesign "${@:1:$#-1}" --identifier "$REVFLY_BUNDLE_ID" --entitlements "$REVFLY_ENTITLEMENTS" "${@: -1}"
+    bifaria_codesign "${@:1:$#-1}" --identifier "$BIFARIA_BUNDLE_ID" --entitlements "$BIFARIA_ENTITLEMENTS" "${@: -1}"
   fi
 }
 
-revfly_sign_dmg() {
+bifaria_sign_dmg() {
   local dmg="$1"
   xattr -cr "$dmg" || true
-  revfly_codesign "$dmg"
+  bifaria_codesign "$dmg"
 }

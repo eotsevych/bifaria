@@ -63,7 +63,7 @@ const NEURAL_ENGINE: ModelFiles = ModelFiles {
 };
 
 /// The helper that runs the Neural Engine build, bundled next to the Bifaria executable.
-const ANE_HELPER: &str = "revfly-asr";
+const ANE_HELPER: &str = "bifaria-asr";
 
 impl ModelFiles {
     fn path(&self) -> PathBuf {
@@ -517,9 +517,9 @@ mod tests {
     #[test]
     fn talks_to_the_neural_engine_helper() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("revfly-asr-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("bifaria-asr-test-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
-        let fake = dir.join("revfly-asr");
+        let fake = dir.join("bifaria-asr");
         fs::write(
             &fake,
             "#!/bin/sh\nwhile read -r line; do case \"$line\" in\n*'\"load\"'*) echo '{\"ok\":true,\"ms\":1}';;\n*'\"transcribe\"'*) echo '{\"ok\":true,\"text\":\" hi \",\"ms\":1}';;\n*) echo '{\"ok\":false,\"error\":\"bad_request\",\"message\":\"no\"}';;\nesac; done\n",

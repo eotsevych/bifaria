@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# RevFly - 1-Line Installer for macOS
+# Bifaria - 1-Line Installer for macOS
 # Downloads the latest notarized release and installs it to /Applications.
 
 set -e
 
-REPO="${REVFLY_REPO:-eotsevych/RevFly}"
-APP_NAME="RevFly.app"
+REPO="${BIFARIA_REPO:-eotsevych/bifaria}"
+APP_NAME="Bifaria.app"
 INSTALL_PATH="/Applications/$APP_NAME"
-TEMP_DIR="/tmp/revfly_install_$$"
+TEMP_DIR="/tmp/bifaria_install_$$"
 
 echo "=========================================================="
-echo "  RevFly - macOS Quick Installer"
+echo "  Bifaria - macOS Quick Installer"
 echo "=========================================================="
 
 # Check if running on macOS
@@ -35,12 +35,12 @@ trap cleanup EXIT
 
 # Check if local DMG exists in current directory or installers/
 DMG_PATH=""
-if [ -f "installers/RevFly_Universal.dmg" ]; then
-  DMG_PATH="installers/RevFly_Universal.dmg"
-elif [ -f "RevFly_Universal.dmg" ]; then
-  DMG_PATH="RevFly_Universal.dmg"
-elif [ -f "$HOME/Desktop/RevFly_Universal.dmg" ]; then
-  DMG_PATH="$HOME/Desktop/RevFly_Universal.dmg"
+if [ -f "installers/Bifaria_Universal.dmg" ]; then
+  DMG_PATH="installers/Bifaria_Universal.dmg"
+elif [ -f "Bifaria_Universal.dmg" ]; then
+  DMG_PATH="Bifaria_Universal.dmg"
+elif [ -f "$HOME/Desktop/Bifaria_Universal.dmg" ]; then
+  DMG_PATH="$HOME/Desktop/Bifaria_Universal.dmg"
 fi
 
 if [ -n "$DMG_PATH" ] && [ -f "$DMG_PATH" ]; then
@@ -48,7 +48,7 @@ if [ -n "$DMG_PATH" ] && [ -f "$DMG_PATH" ]; then
   LOCAL_DMG="$DMG_PATH"
 else
   # Download from GitHub Releases
-  DMG_NAME="RevFly_Universal.dmg"
+  DMG_NAME="Bifaria_Universal.dmg"
   DOWNLOAD_URL="https://github.com/$REPO/releases/latest/download/$DMG_NAME"
   LOCAL_DMG="$TEMP_DIR/$DMG_NAME"
   
@@ -62,8 +62,8 @@ else
 fi
 
 # Close existing running instance
-echo "--> Closing any running instances of RevFly..."
-pkill -x revfly >/dev/null 2>&1 || true
+echo "--> Closing any running instances of Bifaria..."
+pkill -x bifaria >/dev/null 2>&1 || true
 
 # Mount the disk image
 echo "--> Mounting disk image..."
@@ -101,10 +101,10 @@ echo "--> Registering application with system..."
 
 echo ""
 echo "=========================================================="
-echo "✓ RevFly installed successfully into /Applications!"
+echo "✓ Bifaria installed successfully into /Applications!"
 echo "=========================================================="
 echo ""
 echo "To start the app:"
-echo "1. Open Finder -> Applications -> RevFly"
+echo "1. Open Finder -> Applications -> Bifaria"
 echo "2. Grant Microphone and Accessibility permissions when asked."
 echo ""

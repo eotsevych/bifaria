@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smoke test for revfly-translate, the Apple Translation helper (macOS 26+).
+# Smoke test for bifaria-translate, the Apple Translation helper (macOS 26+).
 #   scripts/test_apple_translate.sh [helper-path]
 # Checks that "Привіт, як справи?" translates Ukrainian → English when that pair is downloaded,
 # that a pair that isn't downloaded gives a clean "not_installed" error, and that bad input gives
@@ -8,14 +8,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-HELPER="${1:-$ROOT_DIR/src-tauri/binaries/revfly-translate-universal-apple-darwin}"
+HELPER="${1:-$ROOT_DIR/src-tauri/binaries/bifaria-translate-universal-apple-darwin}"
 [ -x "$HELPER" ] || "$SCRIPT_DIR/build_apple_translate.sh" "$HELPER"
 
 failures=0
 pass() { echo "  ok    $1"; }
 fail() { echo "  FAIL  $1: $2"; failures=$((failures + 1)); }
 field() { python3 -c 'import json,sys; v=json.loads(sys.stdin.readline()).get(sys.argv[1]); print("" if v is None else v)' "$1"; }
-ask() { printf '%s\n' "$1" | REVFLY_TRANSLATE_MODEL="${MODEL:-}" "$HELPER"; }
+ask() { printf '%s\n' "$1" | BIFARIA_TRANSLATE_MODEL="${MODEL:-}" "$HELPER"; }
 
 major="$(sw_vers -productVersion | cut -d. -f1)"
 if [ "$major" -lt 26 ]; then
@@ -23,7 +23,7 @@ if [ "$major" -lt 26 ]; then
   exit 0
 fi
 
-echo "revfly-translate smoke test ($HELPER)"
+echo "bifaria-translate smoke test ($HELPER)"
 
 answer="$(ask '{"op":"ping"}')"
 [ "$(echo "$answer" | field ok)" = "True" ] && pass "ping" || fail "ping" "$answer"

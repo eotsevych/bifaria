@@ -265,7 +265,7 @@ mod tests {
         assert_eq!(read_clipboard_text(), None, "only the image, as before");
 
         // Files come back as the same files.
-        let file = std::env::temp_dir().join(format!("revfly_keep_clipboard_{}.txt", std::process::id()));
+        let file = std::env::temp_dir().join(format!("bifaria_keep_clipboard_{}.txt", std::process::id()));
         std::fs::write(&file, "x").unwrap();
         clipboard().unwrap().lock().unwrap().set().file_list(&[&file]).unwrap();
         let previous = take_previous().unwrap();

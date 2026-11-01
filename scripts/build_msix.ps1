@@ -1,6 +1,6 @@
 # Packs the Windows release build into an MSIX for the Microsoft Store.
 # Run after `tauri build` on Windows. The package is unsigned: the Store signs it on publish.
-# Usage: pwsh scripts/build_msix.ps1   → src-tauri/target/release/bundle/msix/RevFly_<version>_x64.msix
+# Usage: pwsh scripts/build_msix.ps1   → src-tauri/target/release/bundle/msix/Bifaria_<version>_x64.msix
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $release = Join-Path $root "src-tauri/target/release"
@@ -13,7 +13,7 @@ $layout = Join-Path $release "msix-layout"
 Remove-Item $layout -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path (Join-Path $layout "Assets") | Out-Null
 
-Copy-Item (Join-Path $release "revfly.exe") (Join-Path $layout "RevFly.exe")
+Copy-Item (Join-Path $release "bifaria.exe") (Join-Path $layout "Bifaria.exe")
 # Native libraries built next to the app, if any (most are linked statically).
 Get-ChildItem $release -Filter *.dll -ErrorAction SilentlyContinue | Copy-Item -Destination $layout
 
@@ -32,7 +32,7 @@ if (-not $makeappx) { throw "makeappx.exe not found; install the Windows SDK" }
 
 $outDir = Join-Path $release "bundle/msix"
 New-Item -ItemType Directory -Path $outDir -Force | Out-Null
-$out = Join-Path $outDir "RevFly_${version}_x64.msix"
+$out = Join-Path $outDir "Bifaria_${version}_x64.msix"
 & $makeappx.FullName pack /d $layout /p $out /o
 if ($LASTEXITCODE -ne 0) { throw "makeappx failed with exit code $LASTEXITCODE" }
 Write-Host "Built $out (version $msixVersion)"

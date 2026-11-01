@@ -10,15 +10,15 @@ DESKTOP_DIR="$HOME/Desktop"
 source "$SCRIPT_DIR/lib_codesign.sh"
 
 echo "=========================================================="
-echo "  RevFly - Rebuild All Installer Packages"
+echo "  Bifaria - Rebuild All Installer Packages"
 echo "=========================================================="
-revfly_print_identity
+bifaria_print_identity
 
 # Ensure installers and desktop directories exist
 mkdir -p "$INSTALLERS_DIR" "$DESKTOP_DIR"
 
-# Detach any mounted RevFly volumes to avoid hdiutil locks
-for vol in "/Volumes/RevFly"*; do
+# Detach any mounted Bifaria volumes to avoid hdiutil locks
+for vol in "/Volumes/Bifaria"*; do
   if [ -d "$vol" ]; then
     hdiutil detach "$vol" -force 2>/dev/null || true
   fi
@@ -44,8 +44,8 @@ echo "--> 2. Building Apple Silicon (arm64) release bundle..."
 cd "$ROOT_DIR"
 bun run tauri build --bundles app
 
-BASE_APP="$ROOT_DIR/src-tauri/target/release/bundle/macos/RevFly.app"
-ARM64_BIN="$ROOT_DIR/src-tauri/target/release/revfly"
+BASE_APP="$ROOT_DIR/src-tauri/target/release/bundle/macos/Bifaria.app"
+ARM64_BIN="$ROOT_DIR/src-tauri/target/release/bifaria"
 
 if [ ! -f "$ARM64_BIN" ] || [ ! -d "$BASE_APP" ]; then
   echo "Error: Apple Silicon build did not produce expected output at $BASE_APP"
@@ -60,14 +60,14 @@ ORT_LIB_LOCATION="$ONNX_DIR" \
 ORT_PREFER_DYNAMIC_LINK=1 \
 cargo build --release --target x86_64-apple-darwin
 
-X86_64_BIN="$ROOT_DIR/src-tauri/target/x86_64-apple-darwin/release/revfly"
+X86_64_BIN="$ROOT_DIR/src-tauri/target/x86_64-apple-darwin/release/bifaria"
 if [ ! -f "$X86_64_BIN" ]; then
   echo "Error: Intel build did not produce expected output at $X86_64_BIN"
   exit 1
 fi
 
 sign_app_bundle() {
-  revfly_sign_app "$1"
+  bifaria_sign_app "$1"
 }
 
 # In-app updater archive (.app.tar.gz + .sig). Needs the updater private key, see DEPLOYMENT.md.
@@ -99,10 +99,10 @@ make_dmg() {
   mkdir -p "$stage_dir"
   cp -R "$app_source" "$stage_dir/"
 
-  if [ ! -d "$stage_dir/RevFly.app" ]; then
+  if [ ! -d "$stage_dir/Bifaria.app" ]; then
     for d in "$stage_dir"/*; do
       if [ -d "$d" ] && [ "$(basename "$d")" != "Applications" ]; then
-        mv "$d" "$stage_dir/RevFly.app"
+        mv "$d" "$stage_dir/Bifaria.app"
         break
       fi
     done
@@ -129,8 +129,8 @@ make_dmg() {
   done
   rm -rf "$stage_dir"
 
-  revfly_sign_dmg "$out_installers"
-  revfly_notarize "$out_installers"
+  bifaria_sign_dmg "$out_installers"
+  bifaria_notarize "$out_installers"
 
   # Copy to Desktop for immediate access
   cp "$out_installers" "$out_desktop"
@@ -160,8 +160,8 @@ copy_resources() {
 
 # A. Universal Installer (arm64 + x86_64)
 echo "--> 4. Creating Universal 2 (Intel + Apple Silicon) installer..."
-UNIV_DIR="/tmp/revfly_univ_$$"
-UNIV_APP="$UNIV_DIR/RevFly.app"
+UNIV_DIR="/tmp/bifaria_univ_$$"
+UNIV_APP="$UNIV_DIR/Bifaria.app"
 rm -rf "$UNIV_DIR"
 mkdir -p "$UNIV_DIR"
 cp -R "$BASE_APP" "$UNIV_APP"
@@ -170,42 +170,42 @@ if [ -d "$ONNX_DIR" ]; then
   cp "$ONNX_DIR"/libonnxruntime*.dylib "$UNIV_APP/Contents/Frameworks/"
 fi
 copy_resources "$UNIV_APP"
-UNIV_BIN="/tmp/revfly_univ_bin_$$"
+UNIV_BIN="/tmp/bifaria_univ_bin_$$"
 lipo -create "$ARM64_BIN" "$X86_64_BIN" -output "$UNIV_BIN"
 chmod +x "$UNIV_BIN"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$UNIV_BIN" 2>/dev/null || true
-cp "$UNIV_BIN" "$UNIV_APP/Contents/MacOS/revfly"
+cp "$UNIV_BIN" "$UNIV_APP/Contents/MacOS/bifaria"
 rm -f "$UNIV_BIN"
 sign_app_bundle "$UNIV_APP"
-revfly_notarize "$UNIV_APP"
+bifaria_notarize "$UNIV_APP"
 
 # Update root app bundle
-rm -rf "$ROOT_DIR/RevFly.app"
-cp -R "$UNIV_APP" "$ROOT_DIR/RevFly.app"
+rm -rf "$ROOT_DIR/Bifaria.app"
+cp -R "$UNIV_APP" "$ROOT_DIR/Bifaria.app"
 
 # If --install passed, install to /Applications
 if [ "$1" = "--install" ]; then
-  echo "--> Installing to /Applications/RevFly.app..."
-  rm -rf "/Applications/RevFly.app"
-  cp -R "$UNIV_APP" "/Applications/RevFly.app"
-  sign_app_bundle "/Applications/RevFly.app"
-  touch "/Applications/RevFly.app"
-  touch "/Applications/RevFly.app/Contents/Info.plist"
-  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f -r "/Applications/RevFly.app" 2>/dev/null || true
+  echo "--> Installing to /Applications/Bifaria.app..."
+  rm -rf "/Applications/Bifaria.app"
+  cp -R "$UNIV_APP" "/Applications/Bifaria.app"
+  sign_app_bundle "/Applications/Bifaria.app"
+  touch "/Applications/Bifaria.app"
+  touch "/Applications/Bifaria.app/Contents/Info.plist"
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f -r "/Applications/Bifaria.app" 2>/dev/null || true
   rm -rf /private/var/folders/*/*/*/com.apple.iconservices* 2>/dev/null || true
   rm -rf /private/var/folders/*/*/*/com.apple.dock.iconcache* 2>/dev/null || true
   killall Finder Dock 2>/dev/null || true
   echo "✓ Installed to /Applications"
 fi
 
-make_dmg "$UNIV_APP" "RevFly_Universal.dmg" "RevFly Universal"
-make_updater_archive "$UNIV_APP" "RevFly_Universal.app.tar.gz"
+make_dmg "$UNIV_APP" "Bifaria_Universal.dmg" "Bifaria Universal"
+make_updater_archive "$UNIV_APP" "Bifaria_Universal.app.tar.gz"
 rm -rf "$UNIV_DIR"
 
 # B. Intel Only Installer (x86_64)
 echo "--> 5. Creating Intel (x86_64) installer..."
-INTEL_DIR="/tmp/revfly_intel_$$"
-INTEL_APP="$INTEL_DIR/RevFly.app"
+INTEL_DIR="/tmp/bifaria_intel_$$"
+INTEL_APP="$INTEL_DIR/Bifaria.app"
 rm -rf "$INTEL_DIR"
 mkdir -p "$INTEL_DIR"
 cp -R "$BASE_APP" "$INTEL_APP"
@@ -213,37 +213,37 @@ mkdir -p "$INTEL_APP/Contents/Frameworks"
 if [ -d "$ONNX_DIR" ]; then
   cp "$ONNX_DIR"/libonnxruntime*.dylib "$INTEL_APP/Contents/Frameworks/"
 fi
-cp "$X86_64_BIN" "$INTEL_APP/Contents/MacOS/revfly"
-chmod +x "$INTEL_APP/Contents/MacOS/revfly"
-install_name_tool -add_rpath "@executable_path/../Frameworks" "$INTEL_APP/Contents/MacOS/revfly" 2>/dev/null || true
+cp "$X86_64_BIN" "$INTEL_APP/Contents/MacOS/bifaria"
+chmod +x "$INTEL_APP/Contents/MacOS/bifaria"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$INTEL_APP/Contents/MacOS/bifaria" 2>/dev/null || true
 copy_resources "$INTEL_APP"
 sign_app_bundle "$INTEL_APP"
-revfly_notarize "$INTEL_APP"
-make_dmg "$INTEL_APP" "RevFly_Intel_x86_64.dmg" "RevFly Intel"
+bifaria_notarize "$INTEL_APP"
+make_dmg "$INTEL_APP" "Bifaria_Intel_x86_64.dmg" "Bifaria Intel"
 rm -rf "$INTEL_DIR"
 
 # C. Apple Silicon Only Installer (arm64)
 echo "--> 6. Creating Apple Silicon (arm64) installer..."
-ARM_DIR="/tmp/revfly_arm_$$"
-ARM_APP="$ARM_DIR/RevFly.app"
+ARM_DIR="/tmp/bifaria_arm_$$"
+ARM_APP="$ARM_DIR/Bifaria.app"
 rm -rf "$ARM_DIR"
 mkdir -p "$ARM_DIR"
 cp -R "$BASE_APP" "$ARM_APP"
 rm -rf "$ARM_APP/Contents/Frameworks"
-cp "$ARM64_BIN" "$ARM_APP/Contents/MacOS/revfly"
-chmod +x "$ARM_APP/Contents/MacOS/revfly"
+cp "$ARM64_BIN" "$ARM_APP/Contents/MacOS/bifaria"
+chmod +x "$ARM_APP/Contents/MacOS/bifaria"
 copy_resources "$ARM_APP"
 sign_app_bundle "$ARM_APP"
-revfly_notarize "$ARM_APP"
-make_dmg "$ARM_APP" "RevFly_Apple_Silicon_arm64.dmg" "RevFly Apple Silicon"
+bifaria_notarize "$ARM_APP"
+make_dmg "$ARM_APP" "Bifaria_Apple_Silicon_arm64.dmg" "Bifaria Apple Silicon"
 rm -rf "$ARM_DIR"
 
 echo ""
 echo "=========================================================="
 echo "✓ All installer apps rebuilt successfully!"
 echo "✓ Location: $INSTALLERS_DIR"
-echo "   - RevFly_Universal.dmg (Intel + Apple Silicon)"
-echo "   - RevFly_Apple_Silicon_arm64.dmg"
-echo "   - RevFly_Intel_x86_64.dmg"
+echo "   - Bifaria_Universal.dmg (Intel + Apple Silicon)"
+echo "   - Bifaria_Apple_Silicon_arm64.dmg"
+echo "   - Bifaria_Intel_x86_64.dmg"
 echo "✓ Also copied to: $DESKTOP_DIR"
 echo "=========================================================="

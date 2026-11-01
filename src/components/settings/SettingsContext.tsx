@@ -180,7 +180,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     if (patch.theme) {
       applyTheme(patch.theme as ThemeMode);
       broadcastTheme(patch.theme as ThemeMode);
-      localStorage.setItem("revfly_theme", patch.theme);
+      localStorage.setItem("bifaria_theme", patch.theme);
     }
 
     return await persistSettings(updated);

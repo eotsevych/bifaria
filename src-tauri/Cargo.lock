@@ -396,6 +396,51 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
+name = "bifaria"
+version = "1.1.0"
+dependencies = [
+ "arboard",
+ "audioadapter-buffers",
+ "base64 0.22.1",
+ "chrono",
+ "cpal",
+ "dirs 6.0.0",
+ "enigo",
+ "futures-util",
+ "fxtranslate",
+ "hound",
+ "libc",
+ "log",
+ "nnnoiseless",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
+ "parakeet-rs",
+ "regex",
+ "reqwest 0.12.28",
+ "rfd",
+ "rubato",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "silero-vad-crs",
+ "symphonia",
+ "sysinfo",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-log",
+ "tauri-plugin-notification",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-updater",
+ "tokio",
+ "whisper-rs",
+ "whisper-rs-sys",
+ "windows-sys 0.60.2",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.72.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4495,51 +4540,6 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams 0.5.0",
  "web-sys",
-]
-
-[[package]]
-name = "revfly"
-version = "1.1.0"
-dependencies = [
- "arboard",
- "audioadapter-buffers",
- "base64 0.22.1",
- "chrono",
- "cpal",
- "dirs 6.0.0",
- "enigo",
- "futures-util",
- "fxtranslate",
- "hound",
- "libc",
- "log",
- "nnnoiseless",
- "objc2 0.6.4",
- "objc2-app-kit 0.3.2",
- "objc2-foundation 0.3.2",
- "parakeet-rs",
- "regex",
- "reqwest 0.12.28",
- "rfd",
- "rubato",
- "rusqlite",
- "serde",
- "serde_json",
- "silero-vad-crs",
- "symphonia",
- "sysinfo",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-log",
- "tauri-plugin-notification",
- "tauri-plugin-single-instance",
- "tauri-plugin-updater",
- "tokio",
- "whisper-rs",
- "whisper-rs-sys",
- "windows-sys 0.60.2",
 ]
 
 [[package]]

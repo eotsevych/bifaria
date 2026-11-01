@@ -1,11 +1,11 @@
 //! The "Apple" translation provider: Apple's on-device Translation framework, the engine behind the
 //! Translate app. No API key or network, and nothing leaves the Mac.
 //!
-//! The framework is Swift-only, so Bifaria talks to `revfly-translate` (src-tauri/apple-translate),
+//! The framework is Swift-only, so Bifaria talks to `bifaria-translate` (src-tauri/apple-translate),
 //! a helper bundled next to the Bifaria executable. One helper process is started on first use and
 //! kept running, so the language model stays loaded between dictations; it gets one JSON request
 //! per line and answers each with one JSON line. Language downloads need Apple's own prompt, which
-//! the helper shows in a small window of its own (`revfly-translate download <source> <target>`).
+//! the helper shows in a small window of its own (`bifaria-translate download <source> <target>`).
 //!
 //! Needs macOS 26 or later: before that, Apple's framework translates only from inside a SwiftUI
 //! view. Bifaria itself still runs on older macOS; there the provider is offered but disabled.
@@ -26,7 +26,7 @@ use crate::translate::{format_lang_name, normalize_lang};
 pub const PROVIDER: &str = "Apple";
 /// First macOS version where the helper can translate.
 pub const MIN_MACOS: u32 = 26;
-const HELPER_NAME: &str = "revfly-translate";
+const HELPER_NAME: &str = "bifaria-translate";
 /// Longest a status or language-list request may take; translations use the caller's timeout.
 const QUERY_TIMEOUT: Duration = Duration::from_secs(15);
 /// Longest the download window may stay open.
@@ -165,7 +165,7 @@ fn helper_path() -> Option<PathBuf> {
     let path = if path.is_file() {
         path
     } else {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries/revfly-translate-universal-apple-darwin")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries/bifaria-translate-universal-apple-darwin")
     };
     path.is_file().then_some(path)
 }

@@ -179,12 +179,12 @@ function SettingsInner() {
   };
 
   const [accent, setAccent] = useState<AccentColor>(() => {
-    return (localStorage.getItem("revfly_accent") as AccentColor) || "violet";
+    return (localStorage.getItem("bifaria_accent") as AccentColor) || "violet";
   });
 
   const handleAccentChange = (newAccent: AccentColor) => {
     setAccent(newAccent);
-    localStorage.setItem("revfly_accent", newAccent);
+    localStorage.setItem("bifaria_accent", newAccent);
     window.dispatchEvent(new Event("storage"));
   };
 

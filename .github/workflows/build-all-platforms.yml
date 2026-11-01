@@ -1,4 +1,4 @@
-name: Build RevFly (All Platforms)
+name: Build Bifaria (All Platforms)
 
 # Pushes to main and pull requests build installers as workflow artifacts.
 # Pushing a version tag (e.g. v0.1.0) also attaches them to a draft GitHub Release.
@@ -48,7 +48,7 @@ jobs:
       - name: Create draft release
         run: |
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
-            gh release create "$GITHUB_REF_NAME" --draft --title "RevFly $GITHUB_REF_NAME" --generate-notes
+            gh release create "$GITHUB_REF_NAME" --draft --title "Bifaria $GITHUB_REF_NAME" --generate-notes
 
   test:
     name: Lint, type-check and test
@@ -121,25 +121,25 @@ jobs:
             echo "::warning::MACOS_SIGNING_P12 not set; signing ad-hoc (macOS permissions reset on every update)."
             exit 0
           fi
-          KEYCHAIN="$RUNNER_TEMP/revfly-signing.keychain-db"
+          KEYCHAIN="$RUNNER_TEMP/bifaria-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
-          echo "$MACOS_SIGNING_P12" | base64 --decode > "$RUNNER_TEMP/revfly-signing.p12"
+          echo "$MACOS_SIGNING_P12" | base64 --decode > "$RUNNER_TEMP/bifaria-signing.p12"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security import "$RUNNER_TEMP/revfly-signing.p12" -k "$KEYCHAIN" -P "$MACOS_SIGNING_P12_PASSWORD" -T /usr/bin/codesign
+          security import "$RUNNER_TEMP/bifaria-signing.p12" -k "$KEYCHAIN" -P "$MACOS_SIGNING_P12_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
           # codesign only finds the private key in keychains on the user search list.
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
-          rm -f "$RUNNER_TEMP/revfly-signing.p12"
-          echo "REVFLY_SIGN_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          rm -f "$RUNNER_TEMP/bifaria-signing.p12"
+          echo "BIFARIA_SIGN_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
 
       - name: Build macOS installers
         env:
           # Fail instead of shipping the Apple translation provider without its helper.
-          REVFLY_REQUIRE_APPLE_TRANSLATE: "1"
+          BIFARIA_REQUIRE_APPLE_TRANSLATE: "1"
           # And without the Neural Engine speech recognition helper (Parakeet on Apple Silicon).
-          REVFLY_REQUIRE_APPLE_ASR: "1"
+          BIFARIA_REQUIRE_APPLE_ASR: "1"
           # Notarization (skipped when unset) with an App Store Connect API key.
           # Only on release tags and manual runs; it adds ~15 minutes.
           APPLE_API_KEY: ${{ (env.IS_RELEASE == 'true' || github.event_name == 'workflow_dispatch') && secrets.APPLE_API_KEY || '' }}
@@ -150,7 +150,7 @@ jobs:
       - name: Upload macOS installers
         uses: actions/upload-artifact@v4
         with:
-          name: revfly-macos-installers
+          name: bifaria-macos-installers
           path: |
             installers/*.dmg
             installers/*.app.tar.gz
@@ -169,7 +169,7 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     runs-on: windows-latest
     # Whisper's Vulkan build nests deep CMake folders that pass Windows' 260-character path limit
-    # under D:\a\RevFly\RevFly\src-tauri\target, so cargo builds in a short folder instead.
+    # under D:\a\Bifaria\Bifaria\src-tauri\target, so cargo builds in a short folder instead.
     env:
       CARGO_TARGET_DIR: C:\t
     defaults:
@@ -196,7 +196,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       # Whisper's Vulkan GPU backend builds against the Vulkan SDK. The Vulkan loader (vulkan-1.dll)
-      # ships next to RevFly.exe, so the app also starts on PCs without one and uses the CPU there.
+      # ships next to Bifaria.exe, so the app also starts on PCs without one and uses the CPU there.
       - name: Install Vulkan SDK
         shell: pwsh
         env:
@@ -236,7 +236,7 @@ jobs:
       - name: Upload Windows installers
         uses: actions/upload-artifact@v4
         with:
-          name: revfly-windows-installers
+          name: bifaria-windows-installers
           path: |
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/nsis/*.exe.sig
@@ -246,7 +246,7 @@ jobs:
       - name: Upload Microsoft Store package
         uses: actions/upload-artifact@v4
         with:
-          name: revfly-microsoft-store
+          name: bifaria-microsoft-store
           path: src-tauri/target/release/bundle/msix/*.msix
           if-no-files-found: error
 
@@ -321,7 +321,7 @@ jobs:
       - name: Upload Linux packages
         uses: actions/upload-artifact@v4
         with:
-          name: revfly-linux-packages
+          name: bifaria-linux-packages
           path: |
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/appimage/*.AppImage.sig

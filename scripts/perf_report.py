@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarizes RevFly's performance log (logs/performance.jsonl) to spot slowdowns.
+"""Summarizes Bifaria's performance log (logs/performance.jsonl) to spot slowdowns.
 
   python3 scripts/perf_report.py              # default log location on macOS
   python3 scripts/perf_report.py path/to/performance.jsonl
@@ -13,7 +13,7 @@ import statistics
 import sys
 from collections import defaultdict
 
-DEFAULT_LOG = os.path.expanduser("~/Library/Application Support/revfly/logs/performance.jsonl")
+DEFAULT_LOG = os.path.expanduser("~/Library/Application Support/bifaria/logs/performance.jsonl")
 
 
 def median(values):

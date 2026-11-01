@@ -323,6 +323,6 @@ mod tests {
     #[test]
     fn finds_executables_on_path() {
         assert!(on_path("sh"));
-        assert!(!on_path("definitely-not-a-real-tool-revfly"));
+        assert!(!on_path("definitely-not-a-real-tool-bifaria"));
     }
 }

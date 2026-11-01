@@ -1,5 +1,5 @@
-// revfly-asr: transcribes speech with Parakeet TDT 0.6B v3 on the Neural Engine (Core ML, through
-// FluidAudio) for RevFly. RevFly keeps one worker running so the model stays loaded.
+// bifaria-asr: transcribes speech with Parakeet TDT 0.6B v3 on the Neural Engine (Core ML, through
+// FluidAudio) for Bifaria. Bifaria keeps one worker running so the model stays loaded.
 //
 // Worker mode (no arguments): one JSON request per line on stdin, one JSON answer per line on
 // stdout, in order.
@@ -7,7 +7,7 @@
 //   {"op":"transcribe","audio":"<base64 of 16 kHz mono float32 little-endian>"} → {"ok":true,"text":…,"ms":…}
 // Failures are {"ok":false,"error":"not_loaded|bad_request|internal","message":…}.
 //
-// One-shot test: `revfly-asr <model-dir> <16 kHz mono wav>` prints the text and timings.
+// One-shot test: `bifaria-asr <model-dir> <16 kHz mono wav>` prints the text and timings.
 
 import AVFoundation
 import FluidAudio

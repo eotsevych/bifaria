@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo ======================================================
-echo    RevFly - Windows Build Script (.exe / .msi)
+echo    Bifaria - Windows Build Script (.exe / .msi)
 echo ======================================================
 echo.
 
@@ -43,6 +43,6 @@ echo ======================================================
 echo Output installers:
 echo  - Setup Installer (.exe): src-tauri\target\release\bundle\nsis\
 echo  - Windows Installer (.msi): src-tauri\target\release\bundle\msi\
-echo  - Standalone Binary (.exe): src-tauri\target\release\revfly.exe
+echo  - Standalone Binary (.exe): src-tauri\target\release\bifaria.exe
 echo ======================================================
 pause

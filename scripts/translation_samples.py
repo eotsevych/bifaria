@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pairs RevFly's translations with what was said, per service, and flags likely bad ones.
+"""Pairs Bifaria's translations with what was said, per service, and flags likely bad ones.
 
   python3 scripts/translation_samples.py               # default locations on macOS
   python3 scripts/translation_samples.py --per 10      # samples per service (default 8)
@@ -22,7 +22,7 @@ import sys
 import time
 from collections import defaultdict
 
-APP_DIR = os.path.expanduser("~/Library/Application Support/revfly")
+APP_DIR = os.path.expanduser("~/Library/Application Support/bifaria")
 CYRILLIC_TARGETS = {"uk", "ru", "be", "bg", "sr", "mk", "kk"}
 TARGET_CODES = {"English": "en", "Ukrainian": "uk", "Russian": "ru", "Spanish": "es", "French": "fr",
                 "German": "de", "Italian": "it", "Polish": "pl", "Japanese": "ja", "Chinese": "zh"}

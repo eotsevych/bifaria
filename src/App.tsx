@@ -103,13 +103,13 @@ export default function App() {
 
   useEffect(() => {
     // 1. Initial theme application
-    const savedTheme = (localStorage.getItem("revfly_theme") as ThemeMode) || "system";
+    const savedTheme = (localStorage.getItem("bifaria_theme") as ThemeMode) || "system";
     applyTheme(savedTheme);
 
     fetchSettings().then((settings) => {
       if (settings?.theme) {
         const t = settings.theme as ThemeMode;
-        localStorage.setItem("revfly_theme", t);
+        localStorage.setItem("bifaria_theme", t);
         applyTheme(t);
       }
     });

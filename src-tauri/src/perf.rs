@@ -44,7 +44,7 @@ const STAGE_ORDER: [&str; 11] = [
 /// Records the app start time and starts the heartbeat. Call once at startup.
 pub fn init() {
     APP_START.get_or_init(Instant::now);
-    let _ = thread::Builder::new().name("revfly-perf-heartbeat".to_string()).spawn(|| {
+    let _ = thread::Builder::new().name("bifaria-perf-heartbeat".to_string()).spawn(|| {
         let mut probe = Probe::new();
         loop {
             thread::sleep(HEARTBEAT_INTERVAL);

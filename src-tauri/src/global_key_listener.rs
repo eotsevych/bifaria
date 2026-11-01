@@ -454,7 +454,7 @@ pub mod macos {
         // 1. Thread for CGEventTap and CFRunLoop
         let state_runloop = Arc::clone(&state);
         thread::Builder::new()
-            .name("revfly-global-keys".to_string())
+            .name("bifaria-global-keys".to_string())
             .spawn(move || {
                 loop {
                     // Wait for Accessibility trust if needed
@@ -543,7 +543,7 @@ pub mod macos {
         // 2. Watchdog thread for sleep/wake recovery and event tap health
         let state_watchdog = Arc::clone(&state);
         thread::Builder::new()
-            .name("revfly-sleep-watchdog".to_string())
+            .name("bifaria-sleep-watchdog".to_string())
             .spawn(move || {
                 let mut last_tick = Instant::now();
                 loop {

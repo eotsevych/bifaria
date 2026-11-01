@@ -8,7 +8,7 @@
 set -euo pipefail
 
 TAG="${1:?usage: make_update_manifest.sh <tag, e.g. v0.1.0>}"
-REPO="${GITHUB_REPOSITORY:-eotsevych/RevFly}"
+REPO="${GITHUB_REPOSITORY:-eotsevych/bifaria}"
 VERSION="${TAG#v}"
 WORK="$(mktemp -d)"
 cleanup() {
@@ -45,7 +45,7 @@ add_platform() {
 }
 
 echo "--> Collecting signed updater assets for $TAG..."
-MAC="$(find_signed_asset 'RevFly_Universal.app.tar.gz')"
+MAC="$(find_signed_asset 'Bifaria_Universal.app.tar.gz')"
 WIN="$(find_signed_asset '*_x64-setup.exe')"
 LINUX="$(find_signed_asset '*_amd64.AppImage')"
 

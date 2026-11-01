@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Copies the Firefox Translations models RevFly's Offline provider uses into a folder laid out
+"""Copies the Firefox Translations models Bifaria's Offline provider uses into a folder laid out
 for our Hugging Face mirror, then prints the upload command.
 
     python3 scripts/mirror_translation_models.py [out_dir]   # default: ./translation-models-mirror

@@ -1,12 +1,12 @@
 ---
 name: perf-analyze
-description: Analyze RevFly's performance log (performance.jsonl) for slowdowns, memory growth and their causes, and its translations for speed and accuracy per service. Use when the user runs /perf-analyze or asks to analyze RevFly performance, dictation speed, CPU/RAM usage, performance degradation, or how fast and how good translations are.
+description: Analyze Bifaria's performance log (performance.jsonl) for slowdowns, memory growth and their causes, and its translations for speed and accuracy per service. Use when the user runs /perf-analyze or asks to analyze Bifaria performance, dictation speed, CPU/RAM usage, performance degradation, or how fast and how good translations are.
 ---
 
-# Analyze RevFly performance
+# Analyze Bifaria performance
 
-RevFly writes one JSON line per dictation (`"type": "dictation"`) and one every 5 minutes
-(`"type": "heartbeat"`) to `~/Library/Application Support/revfly/logs/performance.jsonl`
+Bifaria writes one JSON line per dictation (`"type": "dictation"`) and one every 5 minutes
+(`"type": "heartbeat"`) to `~/Library/Application Support/bifaria/logs/performance.jsonl`
 (rotated to `performance.1.jsonl` at 10 MB). The writer is `src-tauri/src/perf.rs`; the stage laps
 are set in `stop_listening_and_process` in `src-tauri/src/app_controller.rs`.
 
@@ -65,8 +65,8 @@ attention to the last 24 hours.
   Apple's `fast` / `quality` model. Offline (Firefox Translations models) translates a pair without
   English through English (uk → en → de), so such pairs take about twice as long.
   Apple's on-device translation takes tens of ms per sentence with the Fast model and about half a
-  second with Best quality; its first call after launch also starts the `revfly-translate` helper
-  and loads the model (2-3 s), which RevFly does while the user is still talking.
+  second with Best quality; its first call after launch also starts the `bifaria-translate` helper
+  and loads the model (2-3 s), which Bifaria does while the user is still talking.
 - `speed_factor`: seconds of speech per second of inference. Higher is better. A falling trend at
   similar `speech_sec` is the clearest sign of real degradation.
 - `model_wait_ms`: part of the `inference` lap spent waiting for the model to load. Large values
@@ -76,7 +76,7 @@ attention to the last 24 hours.
   `available_mem_min_mb` low or `swap_used_peak_mb` rising means memory pressure. On macOS
   `available_mem_min_mb` comes from the kernel's memory-pressure level; before 0.1.10 it was
   always 0 there, so ignore it in older lines.
-- `app_version`: the RevFly version that wrote the line (since 0.1.12; older lines lack it, so
+- `app_version`: the Bifaria version that wrote the line (since 0.1.12; older lines lack it, so
   tell builds apart by restarts). Compare versions before blaming a release.
 - `context`: `thermal_state` (nominal/fair/serious/critical), `low_power_mode`, `load_avg_1m`
   (other apps competing for CPU), `app_uptime_sec`, `dictations_since_launch`.
@@ -86,7 +86,7 @@ attention to the last 24 hours.
 - **Degradation with uptime or dictation count** (speed falls or RAM grows the longer the app
   runs, recovering after a restart) → a leak or growing state in the app. Name the stage.
 - **Slow runs explained by the machine**: `low_power_mode: true`, thermal `serious`/`critical`,
-  high `load_avg_1m` or system CPU, low free RAM / swap growth. Say so instead of blaming RevFly.
+  high `load_avg_1m` or system CPU, low free RAM / swap growth. Say so instead of blaming Bifaria.
 - **One stage dominating**: e.g. `vad` in seconds (it should be ~100 ms per 10 s of audio),
   `history_db` > 500 ms (DB size or disk), `paste` > 200 ms, `stop_capture` > 300 ms (denoise).
 - **Model load cost**: `model_wait_ms` and `MODEL_LOAD` times; compare `on_start` vs `on_stop`

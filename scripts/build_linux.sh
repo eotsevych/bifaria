@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo "======================================================"
-echo "   RevFly - Linux Build Script (.AppImage / .deb)"
+echo "   Bifaria - Linux Build Script (.AppImage / .deb)"
 echo "======================================================"
 
 # Check and install system packages if apt is available

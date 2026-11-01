@@ -2,24 +2,24 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn main() {
-  // revfly-translate: the helper for the "Apple" translation provider. Universal; needs the macOS 26 SDK.
+  // bifaria-translate: the helper for the "Apple" translation provider. Universal; needs the macOS 26 SDK.
   build_helper(Helper {
-    name: "revfly-translate",
-    inputs: &["apple-translate/revfly-translate.swift"],
+    name: "bifaria-translate",
+    inputs: &["apple-translate/bifaria-translate.swift"],
     script: "../scripts/build_apple_translate.sh",
-    require_env: "REVFLY_REQUIRE_APPLE_TRANSLATE",
+    require_env: "BIFARIA_REQUIRE_APPLE_TRANSLATE",
     skip_env: None,
     needs: "Xcode with the macOS 26 SDK",
     missing: "the Apple translation provider won't work in this build",
   });
-  // revfly-asr: runs Parakeet on the Neural Engine (Apple Silicon). Needs Swift 6 and, on the
-  // first build, network access to fetch FluidAudio. Without it RevFly runs Parakeet on the CPU.
+  // bifaria-asr: runs Parakeet on the Neural Engine (Apple Silicon). Needs Swift 6 and, on the
+  // first build, network access to fetch FluidAudio. Without it Bifaria runs Parakeet on the CPU.
   build_helper(Helper {
-    name: "revfly-asr",
+    name: "bifaria-asr",
     inputs: &["apple-asr/Package.swift", "apple-asr/Sources/main.swift"],
     script: "../scripts/build_apple_asr.sh",
-    require_env: "REVFLY_REQUIRE_APPLE_ASR",
-    skip_env: Some("REVFLY_SKIP_APPLE_ASR"),
+    require_env: "BIFARIA_REQUIRE_APPLE_ASR",
+    skip_env: Some("BIFARIA_SKIP_APPLE_ASR"),
     needs: "Xcode with Swift 6 and network access for FluidAudio",
     missing: "Parakeet will run on the CPU instead of the Neural Engine",
   });
@@ -42,7 +42,7 @@ struct Helper {
 /// (`binaries/<name>-<target triple>`). One build serves every macOS target.
 ///
 /// When it can't be built, the build goes on with a stand-in that answers every request with an
-/// error (RevFly treats it as missing), unless `require_env` is set.
+/// error (Bifaria treats it as missing), unless `require_env` is set.
 fn build_helper(helper: Helper) {
   let target = std::env::var("TARGET").unwrap_or_default();
   if !target.ends_with("apple-darwin") {
@@ -85,7 +85,7 @@ const STAND_IN_MARK: &str = "stand-in";
 
 /// Answers every request (and a download) with an error saying why the helper is missing.
 fn write_stand_in(path: &Path, name: &str) {
-  let message = format!("This RevFly build has no {name} helper (it couldn't be built)");
+  let message = format!("This Bifaria build has no {name} helper (it couldn't be built)");
   let script = format!(
     "#!/bin/sh\n# {name} {STAND_IN_MARK}\nanswer='{{\"ok\":false,\"error\":\"internal\",\"message\":\"{message}\"}}'\nif [ \"$1\" = download ]; then echo \"$answer\"; exit 1; fi\nwhile read -r _; do echo \"$answer\"; done\n"
   );
