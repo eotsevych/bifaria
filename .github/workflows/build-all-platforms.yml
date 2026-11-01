@@ -220,10 +220,12 @@ jobs:
             bun run tauri build --bundles nsis,msi
           fi
 
-      # The steps below read the build from src-tauri/target.
+      # The steps below read the build from src-tauri/target. The Rust cache can leave a folder there.
       - name: Link the build folder
         shell: pwsh
-        run: New-Item -ItemType Junction -Path src-tauri\target -Target C:\t | Out-Null
+        run: |
+          Remove-Item -Recurse -Force src-tauri\target -ErrorAction SilentlyContinue
+          New-Item -ItemType Junction -Path src-tauri\target -Target C:\t | Out-Null
 
       # The same app, packaged for the Microsoft Store (it switches its own updater off there).
       # Unsigned: the Store signs it on publish, so it is kept out of the GitHub Release.
