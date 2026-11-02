@@ -11,7 +11,7 @@
 [![Tauri](https://img.shields.io/badge/Built%20With-Tauri%20v2-orange.svg)](https://v2.tauri.app)
 [![React](https://img.shields.io/badge/Frontend-React%2019%20%2B%20Tailwind-blueviolet.svg)](https://react.dev)
 
-[Website](https://eotsevych.github.io/Bifaria/) • [Quick Install](INSTALL.md) • [Deployment Guide](DEPLOYMENT.md) • [Features](#features)
+[Website](https://bifaria.com/) • [Quick Install](INSTALL.md) • [Deployment Guide](DEPLOYMENT.md) • [Features](#features)
 
 </div>
 
