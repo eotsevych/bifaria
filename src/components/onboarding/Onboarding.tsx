@@ -1,13 +1,17 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useResolvedTheme } from "@/lib/theme";
 import { createHotkeyCapture, formatDisplay } from "@/lib/hotkey";
 import { SettingsProvider } from "@/components/settings/SettingsContext";
 import { useSettingsContext } from "@/components/settings/useSettingsContext";
 import { PRESETS, STYLES, presetOf, type Preset } from "@/lib/textStyles";
+import { TARGET_LANGUAGES } from "@/lib/languages";
 import {
   checkAccessibility,
+  downloadAppleLanguagePack,
+  fetchAppleLanguagePacks,
+  subscribeToOfflinePackProgress,
+  fetchAppleTranslationInfo,
   finishOnboarding,
-  openAccessibilitySettings,
   requestAccessibility,
   setPracticeMode,
   startMicTest,
@@ -19,16 +23,25 @@ import {
   subscribeToStateChanges,
   triggerDownloadSpecificModel,
   triggerToggleRecording,
+  type AppleLanguagePack,
+  type AppleTranslationInfo,
+  type TranslationMode,
 } from "@/lib/tauri";
 
 /** Hotkeys and pasting need the Accessibility permission only on macOS. */
 const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent);
 
-type StepId = "welcome" | "mic" | "access" | "keys" | "lang" | "style" | "try";
+type StepId = "welcome" | "perms" | "model" | "keys" | "translation" | "style" | "try";
 
-const STEPS: StepId[] = IS_MAC
-  ? ["welcome", "mic", "access", "keys", "lang", "style", "try"]
-  : ["welcome", "mic", "keys", "lang", "style", "try"];
+/** Welcome and Try it bookend the flow; the steps between are counted in the header. */
+const STEPS: StepId[] = ["welcome", "perms", "model", "keys", "translation", "style", "try"];
+const STEP_NAMES: Partial<Record<StepId, string>> = {
+  perms: "Permissions",
+  model: "Speech model",
+  keys: "Languages & hotkeys",
+  translation: "Translation",
+  style: "Text style",
+};
 
 /** Animation clock of the stage illustrations, in ms per tick (as in the design). */
 const TICK_MS = 80;
@@ -46,13 +59,14 @@ const DARK = {
   stage: "#0f0f19",
   stageBorder: "rgba(255,255,255,.05)",
   row: "#181828",
-  rowBorder: "rgba(255,255,255,.07)",
+  rowBorder: "rgba(255,255,255,.14)",
   key: "#22223a",
   keyBorder: "rgba(255,255,255,.1)",
   text: "#e8e8f0",
-  body: "#9a9ab0",
-  dim: "#8a8aa2",
-  faint: "#6b6b80",
+  body: "#c2c2d4",
+  dim: "#a6a6bc",
+  faint: "#8c8ca4",
+  divider: "rgba(255,255,255,.14)",
   accent: "#a594ff",
   accentSoft: "rgba(165,148,255,.14)",
   accentSoftBorder: "rgba(165,148,255,.3)",
@@ -85,9 +99,10 @@ const LIGHT: Palette = {
   key: "#f0f0f6",
   keyBorder: "rgba(0,0,0,.12)",
   text: "#1a1a24",
-  body: "#5c5c70",
-  dim: "#6e6e84",
-  faint: "#9a9aae",
+  body: "#4a4a5e",
+  dim: "#62627a",
+  faint: "#86869c",
+  divider: "rgba(0,0,0,.1)",
   accent: "#7c6af0",
   accentSoft: "rgba(124,106,240,.12)",
   accentSoftBorder: "rgba(124,106,240,.3)",
@@ -435,6 +450,26 @@ function MicIcon({ color }: { color: string }) {
   );
 }
 
+/** The accessibility figure (a person in a circle), as macOS shows for Accessibility. */
+function AccessIcon({ color }: { color: string }) {
+  return (
+    <svg
+      width={28}
+      height={28}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx={12} cy={12} r={10} />
+      <circle cx={12} cy={7} r={1.2} fill={color} />
+      <path d="M7 9.5l5 1.2 5-1.2M12 10.7v3.3M12 14l-2.2 4.2M12 14l2.2 4.2" />
+    </svg>
+  );
+}
+
 type MorphKind = "silent" | "bars" | "scan" | "orbit" | "copy" | "x";
 
 /** The small pill of the design, showing one stage of a recording. */
@@ -492,7 +527,7 @@ function Row({ p, children }: { p: Palette; children: React.ReactNode }) {
         alignItems: "center",
         gap: 10,
         width: "100%",
-        padding: "10px 12px",
+        padding: "14px 16px",
         borderRadius: 10,
         background: p.row,
         border: `1px solid ${p.rowBorder}`,
@@ -515,192 +550,6 @@ const AppMark = () => (
     }}
   />
 );
-
-// ── Steps: each has a stage illustration plus a title and body ─────────────
-
-/** The welcome demo: one recording on a loop, then a translated one. */
-const DEMO_FLOW: [MorphKind, number, string][] = [
-  ["silent", 12, "LISTENING"],
-  ["bars", 36, "LISTENING"],
-  ["scan", 20, "TRANSCRIBING"],
-  ["copy", 18, "COPIED"],
-  ["orbit", 22, "TRANSLATING"],
-  ["copy", 16, "COPIED"],
-];
-const DEMO_TOTAL = DEMO_FLOW.reduce((sum, f) => sum + f[1], 0);
-
-function WelcomeStage({ t, p, target }: { t: number; p: Palette; target: string }) {
-  let rest = t % DEMO_TOTAL;
-  let cur = DEMO_FLOW[0]!;
-  for (const f of DEMO_FLOW) {
-    if (rest < f[1]) {
-      cur = f;
-      break;
-    }
-    rest -= f[1];
-  }
-  const translating = cur[2] === "TRANSLATING";
-  const source = target === "UK" ? "EN" : "UK";
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
-      <MiniPill kind={cur[0]} t={t} p={p} slot={translating ? `${source} → ${target}` : null} />
-      <span style={{ font: `500 11px ${MONO}`, letterSpacing: ".08em", color: p.dim }}>
-        {cur[2]}
-      </span>
-    </div>
-  );
-}
-
-type MicState = "off" | "waiting" | "allowed";
-
-function MicStage({
-  p,
-  micState,
-  level,
-  onAllow,
-}: {
-  p: Palette;
-  micState: MicState;
-  level: number;
-  onAllow: () => void;
-}) {
-  const { settings, updateSettings, inputDevices } = useSettingsContext();
-  const ring = micState === "off" ? 0 : Math.min(1, level * 3);
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 14,
-        width: "100%",
-        maxWidth: 320,
-      }}
-    >
-      <div
-        style={{
-          width: 64,
-          height: 64,
-          borderRadius: 32,
-          background: p.accentSoft,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: `0 0 0 ${Math.round(ring * 10)}px ${p.accentSoft}`,
-          transition: "box-shadow 80ms linear",
-        }}
-      >
-        <MicIcon color={p.accent} />
-      </div>
-      <Row p={p}>
-        <span style={{ fontSize: 13, flex: 1 }}>Microphone</span>
-        {micState === "allowed" ? (
-          <span style={{ font: `600 11px ${MONO}`, color: p.green }}>ALLOWED</span>
-        ) : micState === "waiting" ? (
-          <span style={{ font: `600 11px ${MONO}`, color: p.dim }}>SAY SOMETHING…</span>
-        ) : (
-          <button
-            type="button"
-            onClick={onAllow}
-            style={{
-              background: p.accent,
-              color: p.onAccent,
-              border: "none",
-              borderRadius: 8,
-              padding: "7px 12px",
-              font: `600 12px ${SANS}`,
-              cursor: "pointer",
-            }}
-          >
-            Allow
-          </button>
-        )}
-      </Row>
-      <select
-        value={settings.input_device ?? ""}
-        onChange={(e) => updateSettings({ input_device: e.target.value || null })}
-        style={{
-          maxWidth: "100%",
-          background: "none",
-          border: "none",
-          color: p.dim,
-          font: `500 11px ${MONO}`,
-          cursor: "pointer",
-          textAlign: "center",
-        }}
-      >
-        <option value="">INPUT: SYSTEM DEFAULT</option>
-        {inputDevices.map((d) => (
-          <option key={d} value={d}>
-            INPUT: {d.toUpperCase()}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-function AccessStage({ p, granted }: { p: Palette; granted: boolean | null }) {
-  const on = granted === true;
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", maxWidth: 340 }}>
-      <span style={{ font: `600 10.5px ${MONO}`, letterSpacing: ".08em", color: p.dim }}>
-        SYSTEM SETTINGS › ACCESSIBILITY
-      </span>
-      <Row p={p}>
-        <AppMark />
-        <span style={{ fontSize: 13, flex: 1 }}>Bifaria</span>
-        <div
-          role="switch"
-          aria-checked={on}
-          onClick={() => (on ? openAccessibilitySettings() : requestAccessibility())}
-          style={{
-            width: 36,
-            height: 20,
-            borderRadius: 10,
-            background: on ? p.green : p.switchOff,
-            position: "relative",
-            cursor: "pointer",
-            transition: "background 160ms",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              top: 2,
-              left: on ? 18 : 2,
-              width: 16,
-              height: 16,
-              borderRadius: 8,
-              background: "#ffffff",
-              transition: "left 160ms",
-            }}
-          />
-        </div>
-      </Row>
-      <span style={{ fontSize: 12, color: p.dim, lineHeight: 1.5 }}>
-        {on ? (
-          "Done. Bifaria can paste for you."
-        ) : (
-          <>
-            Click the switch, then turn Bifaria on in{" "}
-            <a
-              href="#"
-              onClick={(e) => {
-                e.preventDefault();
-                openAccessibilitySettings();
-              }}
-              style={{ color: p.accent }}
-            >
-              System Settings
-            </a>
-            . This page updates by itself.
-          </>
-        )}
-      </span>
-    </div>
-  );
-}
 
 function Keycap({ p, children }: { p: Palette; children: React.ReactNode }) {
   return (
@@ -771,18 +620,490 @@ function Chip({
   );
 }
 
-function KeysStage({ p }: { p: Palette }) {
-  const { settings, updateSettings } = useSettingsContext();
-  const [editing, setEditing] = useState<"main" | "translate" | null>(null);
-  const mode = settings.translation_mode ?? "hotkey";
-  const target = langCode(settings.target_lang || "English");
-  const translateKey = settings.translate_hotkey ?? "";
-  const [conflict, setConflict] = useState(false);
+// ── Building blocks of a step: eyebrow, title, lede, labelled sections ─────
 
-  const save = (which: "main" | "translate", v: string) => {
+function Eyebrow({ p, children }: { p: Palette; children: React.ReactNode }) {
+  return (
+    <div style={{ font: `600 12px ${MONO}`, letterSpacing: ".1em", color: p.accent }}>
+      {children}
+    </div>
+  );
+}
+
+function Title({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: 30, fontWeight: 600, letterSpacing: "-.015em", lineHeight: 1.2 }}>
+      {children}
+    </div>
+  );
+}
+
+function Lede({ p, children }: { p: Palette; children: React.ReactNode }) {
+  return <div style={{ fontSize: 16, lineHeight: 1.55, color: p.body }}>{children}</div>;
+}
+
+/** Short notes, one sentence per line, so they read at a glance instead of as a wall of text. */
+function Lines({ p, lines, size = 13 }: { p: Palette; lines: string[]; size?: number }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {lines.map((l) => (
+        <div key={l} style={{ fontSize: size, lineHeight: 1.5, color: p.dim }}>
+          {l}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Fine({ p, children }: { p: Palette; children: React.ReactNode }) {
+  return <div style={{ fontSize: 13, lineHeight: 1.55, color: p.dim }}>{children}</div>;
+}
+
+function SectionLabel({ p, children }: { p: Palette; children: React.ReactNode }) {
+  return (
+    <div style={{ font: `600 11.5px ${MONO}`, letterSpacing: ".08em", color: p.dim }}>
+      {children}
+    </div>
+  );
+}
+
+/** A dropdown in the guide's palette. */
+function selectStyle(p: Palette): React.CSSProperties {
+  return {
+    height: CONTROL_H,
+    padding: "0 10px",
+    borderRadius: 8,
+    background: p.row,
+    color: p.text,
+    border: `1px solid ${p.rowBorder}`,
+    font: `500 14px ${SANS}`,
+    cursor: "pointer",
+  };
+}
+
+/** A thin line between sections, so blocks read apart (above all on the dark theme). */
+function Divider({ p }: { p: Palette }) {
+  return <div style={{ height: 1, background: p.divider, margin: "6px 0" }} />;
+}
+
+function PrimaryButton({
+  p,
+  onClick,
+  children,
+}: {
+  p: Palette;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        background: p.accent,
+        color: p.onAccent,
+        border: "none",
+        borderRadius: 8,
+        padding: "8px 14px",
+        font: `600 13px ${SANS}`,
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Done({ p, children }: { p: Palette; children: React.ReactNode }) {
+  return <span style={{ font: `600 12px ${MONO}`, color: p.green }}>✓ {children}</span>;
+}
+
+/** Size of the hotkeys step's controls, so the hotkeys, switch and dropdown line up. */
+const CONTROL_W = 340;
+const CONTROL_H = 38;
+
+/** A segmented control in the guide's palette; with `width`, its options share it equally. */
+function Segments<T extends string>({
+  p,
+  value,
+  options,
+  onChange,
+  width,
+}: {
+  p: Palette;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+  width?: number;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      style={{
+        display: "inline-flex",
+        width,
+        height: CONTROL_H,
+        boxSizing: "border-box",
+        padding: 3,
+        gap: 2,
+        borderRadius: 9,
+        background: p.stage,
+        border: `1px solid ${p.rowBorder}`,
+      }}
+    >
+      {options.map((o) => {
+        const on = o.value === value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => onChange(o.value)}
+            style={{
+              flex: width ? 1 : undefined,
+              padding: "0 14px",
+              borderRadius: 7,
+              border: "none",
+              background: on ? p.accent : "transparent",
+              color: on ? p.onAccent : p.text,
+              font: `${on ? 600 : 500} 14px ${SANS}`,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Welcome ─────────────────────────────────────────────────────────────────
+
+/** You speak → Transcription → Text (the dictation path, in the accent colour), with an optional
+ * branch through Translation (orange). */
+function FlowDiagram({ p, hotkey }: { p: Palette; hotkey: string }) {
+  const node = (x: number, y: number, color: string, filled = false) => (
+    <circle cx={x} cy={y} r={6} fill={filled ? color : p.card} stroke={color} strokeWidth={2} />
+  );
+  const label = (x: number, y: number, text: string, color: string, sub?: string) => (
+    <>
+      <text x={x} y={y} fill={color} style={{ font: `600 14px ${SANS}` }}>
+        {text}
+      </text>
+      {sub && (
+        <text x={x} y={y + 17} fill={p.dim} style={{ font: `400 12px ${SANS}` }}>
+          {sub}
+        </text>
+      )}
+    </>
+  );
+  return (
+    <svg viewBox="0 0 560 124" width="100%" style={{ maxWidth: 560 }} aria-hidden>
+      <path
+        d="M12 54 H230 C275 54 275 22 320 22 H440"
+        stroke={p.accent}
+        strokeWidth={2}
+        fill="none"
+      />
+      <path d="M230 54 C275 54 275 88 320 88 H440" stroke={p.orange} strokeWidth={2} fill="none" />
+      {node(12, 54, p.accent)}
+      {node(128, 54, p.accent)}
+      {node(332, 88, p.orange)}
+      {node(440, 22, p.accent, true)}
+      {node(440, 88, p.orange, true)}
+      {label(0, 82, "You speak", p.text, hotkey)}
+      {label(106, 82, "Transcription", p.text)}
+      {label(298, 116, "Translation", p.orange)}
+      {label(454, 27, "Text", p.accentText, "at your cursor")}
+      {label(454, 93, "Translated", p.orange, "optional")}
+    </svg>
+  );
+}
+
+function WelcomeStep({ p, hotkey, place }: { p: Palette; hotkey: string; place: string }) {
+  return (
+    <>
+      <Eyebrow p={p}>WELCOME</Eyebrow>
+      <Title>Speak anywhere. Bifaria types it.</Title>
+      <Lede p={p}>
+        Press a hotkey, speak, press it again. Bifaria writes down what you said, or translates it,
+        and pastes it where your cursor is.
+      </Lede>
+      <div style={{ padding: "8px 0" }}>
+        <FlowDiagram p={p} hotkey={hotkey} />
+      </div>
+      <Row p={p}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 16, fontWeight: 600 }}>Your voice stays on {place}</span>
+          <Lines
+            p={p}
+            size={14}
+            lines={[
+              "Speech is turned into text right here. No audio is sent anywhere.",
+              "Translation is optional. Dictation works on its own.",
+            ]}
+          />
+        </div>
+      </Row>
+      <Lines
+        p={p}
+        lines={[
+          "Setup takes about two minutes.",
+          "The speech model downloads once while you set up, so it's ready by the end.",
+        ]}
+      />
+    </>
+  );
+}
+
+// ── Permissions ─────────────────────────────────────────────────────────────
+
+type MicState = "off" | "waiting" | "allowed";
+
+function Permission({
+  p,
+  icon,
+  name,
+  why,
+  children,
+}: {
+  p: Palette;
+  icon: React.ReactNode;
+  name: string;
+  why: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 12 }}>
+      <div style={{ width: 32, flexShrink: 0, paddingTop: 2 }}>{icon}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
+        <span style={{ fontSize: 17, fontWeight: 600 }}>{name}</span>
+        <span style={{ fontSize: 14, lineHeight: 1.55, color: p.body }}>{why}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PermsStep({
+  p,
+  micState,
+  micLevel,
+  onAllowMic,
+  granted,
+  place,
+}: {
+  p: Palette;
+  micState: MicState;
+  micLevel: number;
+  onAllowMic: () => void;
+  granted: boolean | null;
+  place: string;
+}) {
+  const { settings, updateSettings, inputDevices } = useSettingsContext();
+  const ring = micState === "off" ? 0 : Math.min(1, micLevel * 3);
+  return (
+    <>
+      <Title>{IS_MAC ? "Two permissions from macOS" : "Microphone access"}</Title>
+      <Lede p={p}>Bifaria asks only for what it needs, and uses each permission for one job.</Lede>
+      <Divider p={p} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <Permission
+          p={p}
+          icon={
+            <div
+              style={{
+                borderRadius: 14,
+                boxShadow: `0 0 0 ${Math.round(ring * 6)}px ${p.accentSoft}`,
+                transition: "box-shadow 80ms linear",
+                display: "inline-flex",
+              }}
+            >
+              <MicIcon color={p.accent} />
+            </div>
+          }
+          name="Microphone"
+          why={`To hear you. Only while you're recording, from one press of the hotkey to the next. Speech is processed on ${place}.`}
+        >
+          {micState === "allowed" ? (
+            <Done p={p}>ALLOWED</Done>
+          ) : micState === "waiting" ? (
+            <span style={{ font: `600 11px ${MONO}`, color: p.dim }}>SAY SOMETHING…</span>
+          ) : (
+            <>
+              <PrimaryButton p={p} onClick={onAllowMic}>
+                Allow microphone
+              </PrimaryButton>
+              {IS_MAC && <Fine p={p}>macOS will ask you to confirm.</Fine>}
+            </>
+          )}
+          <select
+            value={settings.input_device ?? ""}
+            onChange={(e) => updateSettings({ input_device: e.target.value || null })}
+            style={{
+              maxWidth: 220,
+              background: "none",
+              border: "none",
+              color: p.dim,
+              font: `500 11px ${MONO}`,
+              cursor: "pointer",
+            }}
+          >
+            <option value="">INPUT: SYSTEM DEFAULT</option>
+            {inputDevices.map((d) => (
+              <option key={d} value={d}>
+                INPUT: {d.toUpperCase()}
+              </option>
+            ))}
+          </select>
+        </Permission>
+        {IS_MAC && <Divider p={p} />}
+        {IS_MAC && (
+          <Permission
+            p={p}
+            icon={<AccessIcon color={p.accent} />}
+            name="Accessibility"
+            why="To notice the hotkey in any app and paste the text where your cursor is. Nothing else."
+          >
+            {granted ? (
+              <Done p={p}>ALLOWED</Done>
+            ) : (
+              <>
+                <PrimaryButton p={p} onClick={() => requestAccessibility()}>
+                  Open System Settings
+                </PrimaryButton>
+                <Fine p={p}>Turn on Bifaria, then come back. This page updates by itself.</Fine>
+              </>
+            )}
+          </Permission>
+        )}
+      </div>
+      <Divider p={p} />
+      <Fine p={p}>You can carry on and allow it later. Dictation won't work until you do.</Fine>
+    </>
+  );
+}
+
+// ── Speech model ────────────────────────────────────────────────────────────
+
+function ModelStep({ p, dl, place }: { p: Palette; dl: ModelDownload; place: string }) {
+  const { settings, models } = useSettingsContext();
+  const model = models.find((m) => m.filename === settings.model_name);
+  const size = model?.file_size_bytes ? formatBytes(model.file_size_bytes) : null;
+  const percent = dl.phase === "ready" ? 100 : dl.percent;
+  const status =
+    dl.phase === "ready"
+      ? "Ready"
+      : dl.phase === "downloading" && dl.total > 0
+        ? `${dl.percent}% · ${formatBytes(dl.downloaded)} of ${formatBytes(dl.total)}`
+        : dl.phase === "failed"
+          ? "Download failed"
+          : dl.phase === "idle"
+            ? "Not downloaded"
+            : "Starting…";
+  const col = (title: string, body: string) => (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+      <span style={{ fontSize: 15, fontWeight: 600 }}>{title}</span>
+      <span style={{ fontSize: 14, lineHeight: 1.55, color: p.body }}>{body}</span>
+    </div>
+  );
+  return (
+    <>
+      <Title>Speech recognition runs on {place}</Title>
+      <Lede p={p}>
+        Bifaria turns speech into text with a model that lives on {place}. It downloads once
+        {size ? `, about ${size},` : ""} then works offline.
+      </Lede>
+      <Divider p={p} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+          <span style={{ fontSize: 17, fontWeight: 600, flex: 1 }}>Speech model</span>
+          <span
+            style={{
+              font: `500 13px ${MONO}`,
+              color: dl.phase === "ready" ? p.green : dl.phase === "failed" ? p.red : p.dim,
+            }}
+          >
+            {status}
+          </span>
+          {(dl.phase === "failed" || dl.phase === "idle") && (
+            <PrimaryButton p={p} onClick={dl.start}>
+              {dl.phase === "failed" ? "Retry" : "Download"}
+            </PrimaryButton>
+          )}
+        </div>
+        <div style={{ height: 6, borderRadius: 3, background: p.segOff, overflow: "hidden" }}>
+          <div
+            style={{
+              height: "100%",
+              width: `${percent}%`,
+              background: dl.phase === "ready" ? p.green : p.accent,
+              transition: "width 400ms",
+            }}
+          />
+        </div>
+        {model && <Fine p={p}>{model.name}</Fine>}
+      </div>
+      <Divider p={p} />
+      <div style={{ display: "flex", gap: 28 }}>
+        {col(
+          "While it downloads",
+          "Keep going with setup. Dictation is a practice run, so you can learn the hotkey.",
+        )}
+        {col(
+          "When it's ready",
+          "Real dictation unlocks. Bifaria tells you, even if this window is closed.",
+        )}
+      </div>
+      <Divider p={p} />
+      <Lines
+        p={p}
+        lines={[
+          `History, logs and (only if you choose) saved audio stay on ${place}.`,
+          "None of it leaves. See or clear it in Settings › Storage.",
+        ]}
+      />
+    </>
+  );
+}
+
+// ── Languages and hotkeys ───────────────────────────────────────────────────
+
+const MODE_OPTIONS: { value: TranslationMode; label: string }[] = [
+  { value: "off", label: "Off" },
+  { value: "hotkey", label: "Own hotkey" },
+  { value: "auto", label: "Every dictation" },
+];
+
+/** A hotkey with a Change link; while changing, the next key press is the new hotkey. */
+function HotkeyField({
+  p,
+  which,
+  editing,
+  setEditing,
+}: {
+  p: Palette;
+  which: "main" | "translate";
+  editing: "main" | "translate" | null;
+  setEditing: (e: "main" | "translate" | null) => void;
+}) {
+  const { settings, updateSettings } = useSettingsContext();
+  const [conflict, setConflict] = useState(false);
+  const active = editing === which;
+  const value = which === "main" ? settings.hotkey : (settings.translate_hotkey ?? "");
+
+  const save = (v: string) => {
     if (which === "main") {
       // A translate hotkey on the same key would never fire; turn it off.
-      updateSettings(v && v === translateKey ? { hotkey: v, translate_hotkey: "" } : { hotkey: v });
+      updateSettings(
+        v && v === settings.translate_hotkey ? { hotkey: v, translate_hotkey: "" } : { hotkey: v },
+      );
     } else if (v && v === settings.hotkey) {
       setConflict(true);
       return;
@@ -799,9 +1120,9 @@ function KeysStage({ p }: { p: Palette }) {
   // the new hotkey, Esc cancels. The current hotkeys are held off meanwhile, so pressing one
   // doesn't start a recording.
   useEffect(() => {
-    if (!editing) return;
+    if (!active) return;
     setPracticeMode(true);
-    const capture = createHotkeyCapture((hotkey) => saveRef.current(editing, hotkey));
+    const capture = createHotkeyCapture((hotkey) => saveRef.current(hotkey));
     const onDown = (e: KeyboardEvent) => {
       e.preventDefault();
       if (e.key === "Escape") {
@@ -822,213 +1143,523 @@ function KeysStage({ p }: { p: Palette }) {
       window.removeEventListener("keyup", onUp);
       setPracticeMode(false);
     };
-  }, [editing]);
+  }, [active, setEditing]);
 
-  const rows: {
-    id: "main" | "translate";
-    name: string;
-    hint: string;
-    value: string;
-    color: string;
-    editable: boolean;
-  }[] = [
-    {
-      id: "main",
-      name: "Dictate",
-      hint: "Press, speak, press again",
-      value: settings.hotkey,
-      color: p.accent,
-      editable: true,
-    },
-    {
-      id: "translate",
-      name: "Translate",
-      hint:
-        mode === "off"
-          ? "Off. Turn it on in Settings → General"
-          : mode === "auto"
-            ? `Dictate translates other languages → ${target}`
-            : `Press, speak, press again → ${target}`,
-      value: mode === "hotkey" ? translateKey : "",
-      color: p.orange,
-      editable: mode === "hotkey",
-    },
-  ];
-
+  const box: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+    width: CONTROL_W,
+    height: CONTROL_H,
+    boxSizing: "border-box",
+    padding: "0 6px 0 8px",
+    borderRadius: 8,
+    background: p.row,
+  };
+  if (active) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div
+          style={{
+            ...box,
+            border: `1px dashed ${conflict ? p.red : p.accent}`,
+            font: `600 12px ${MONO}`,
+            color: conflict ? p.red : p.accent,
+          }}
+        >
+          {conflict ? "USED BY DICTATE" : "PRESS KEYS…  (ESC CANCELS)"}
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {HOTKEY_PRESETS.map((preset) => (
+            <Chip
+              key={preset.value}
+              p={p}
+              on={value === preset.value}
+              onClick={() => save(preset.value)}
+            >
+              {preset.label}
+            </Chip>
+          ))}
+        </div>
+      </div>
+    );
+  }
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", maxWidth: 420 }}>
-      {rows.map((k) => {
-        const active = editing === k.id;
-        return (
+    <div style={{ ...box, border: `1px solid ${p.rowBorder}` }}>
+      {value ? (
+        keycaps(value).map((key) => (
+          <Keycap key={key} p={p}>
+            {key}
+          </Keycap>
+        ))
+      ) : (
+        <span style={{ font: `600 12px ${MONO}`, color: p.dim }}>NOT SET</span>
+      )}
+      <button
+        type="button"
+        onClick={() => setEditing(which)}
+        style={{
+          marginLeft: "auto",
+          background: "none",
+          border: "none",
+          color: p.accent,
+          font: `600 13px ${SANS}`,
+          cursor: "pointer",
+          padding: 0,
+        }}
+      >
+        Change
+      </button>
+    </div>
+  );
+}
+
+/** One row of the hotkeys grid: a label column and a control with a hint under it. */
+function FieldRow({
+  p,
+  label,
+  hint,
+  children,
+}: {
+  p: Palette;
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "150px 1fr", columnGap: 20, rowGap: 6 }}>
+      <span style={{ fontSize: 15, fontWeight: 600, alignSelf: "center" }}>{label}</span>
+      <div>{children}</div>
+      {hint && (
+        <>
+          <span />
+          <span style={{ fontSize: 13, color: p.dim }}>{hint}</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function KeysStep({ p }: { p: Palette }) {
+  const { settings, updateSettings } = useSettingsContext();
+  const [editing, setEditing] = useState<"main" | "translate" | null>(null);
+  const mode = settings.translation_mode ?? "hotkey";
+  const target = settings.target_lang || "English";
+  const dictate = hotkeyName(settings.hotkey);
+  const translate = settings.translate_hotkey ? hotkeyName(settings.translate_hotkey) : null;
+  const modeHint =
+    mode === "off"
+      ? "Bifaria only types what you say."
+      : mode === "auto"
+        ? `${dictate} translates whenever you speak another language.`
+        : translate
+          ? `${translate} translates. ${dictate} just dictates.`
+          : "Set a translate hotkey below.";
+  return (
+    <>
+      <Title>Languages and hotkeys</Title>
+      <Divider p={p} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <SectionLabel p={p}>DICTATION</SectionLabel>
+        <FieldRow p={p} label="Dictate" hint="Types what you say.">
+          <HotkeyField p={p} which="main" editing={editing} setEditing={setEditing} />
+        </FieldRow>
+        <Divider p={p} />
+        <SectionLabel p={p}>TRANSLATION</SectionLabel>
+        <FieldRow p={p} label="Translate" hint={modeHint}>
+          <Segments
+            p={p}
+            value={mode}
+            options={MODE_OPTIONS}
+            width={CONTROL_W}
+            onChange={(v) => updateSettings({ translation_mode: v })}
+          />
+        </FieldRow>
+        {mode !== "off" && (
+          <FieldRow p={p} label="Translate into">
+            <select
+              value={target}
+              onChange={(e) => updateSettings({ target_lang: e.target.value })}
+              style={{ ...selectStyle(p), width: CONTROL_W }}
+            >
+              {(TARGET_LANGUAGES.some((l) => l.value === target)
+                ? TARGET_LANGUAGES
+                : [...TARGET_LANGUAGES, { value: target, label: target }]
+              ).map((l) => (
+                <option key={l.value} value={l.value}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+          </FieldRow>
+        )}
+        {mode === "hotkey" && (
+          <FieldRow p={p} label="Translate hotkey" hint={`Types it in ${target}.`}>
+            <HotkeyField p={p} which="translate" editing={editing} setEditing={setEditing} />
+          </FieldRow>
+        )}
+        {IS_MAC && <Divider p={p} />}
+        {IS_MAC && (
+          <Fine p={p}>
+            Right Option and Right Control work well on their own: few apps use them.
+          </Fine>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ── Where translation happens ───────────────────────────────────────────────
+
+const TRANSLATORS: {
+  value: string;
+  label: string;
+  body: string;
+  sub: string;
+  apple?: "native" | "ai";
+}[] = [
+  {
+    value: "Apple",
+    label: "Apple Native",
+    body: "On this Mac. Free, works offline. Language packs download once.",
+    sub: "Apple Translation · macOS 26 and later",
+    apple: "native",
+  },
+  {
+    value: "Apple Intelligence",
+    label: "Apple Intelligence",
+    body: "On this Mac. Slower, but can also polish tone and grammar.",
+    sub: "macOS 26 and later",
+    apple: "ai",
+  },
+  {
+    value: "Offline",
+    label: "Offline models",
+    body: "On this computer. Translation models download once, then work without internet.",
+    sub: "Used when the Apple options aren't available",
+  },
+  {
+    value: "LLM",
+    label: "Your own AI model",
+    body: "On this computer. An AI app you run yourself, such as Ollama or LM Studio. Set it up in Settings › Translations.",
+    sub: "LLM at a local address",
+  },
+];
+
+/** The settings value's provider, the same way Settings → Translations reads it. */
+function providerKey(raw: string | undefined): string {
+  const v = (raw || "LLM").toLowerCase();
+  return v === "apple"
+    ? "Apple"
+    : v === "apple intelligence"
+      ? "Apple Intelligence"
+      : v === "offline"
+        ? "Offline"
+        : "LLM";
+}
+
+/** Language packs into the target language for Apple Native (or the Offline models), one row per
+ * pair with a Download link next to it. The same calls as Settings → Translations. */
+function LanguagePacks({ p, offline }: { p: Palette; offline: boolean }) {
+  const { settings } = useSettingsContext();
+  const target = settings.target_lang || "English";
+  const [packs, setPacks] = useState<AppleLanguagePack[] | null>(null);
+  const [targetCode, setTargetCode] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetchAppleLanguagePacks(target, offline);
+      setPacks(res.languages);
+      setTargetCode(res.target);
+    } catch (e) {
+      setError(String(e));
+      setPacks(null);
+    }
+  }, [target, offline]);
+
+  useEffect(() => {
+    void refresh();
+    // Packs downloaded in System Settings meanwhile show up when the window is back in front.
+    const onFocus = () => void refresh();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refresh]);
+
+  // While a pack downloads: the bytes so far (Offline reports them; Apple shows its own window)
+  // and a clock for the moving bar.
+  const [bytes, setBytes] = useState(0);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!busy) return;
+    setBytes(0);
+    const timer = setInterval(() => setTick((n) => n + 1), 40);
+    const unlisten = offline
+      ? subscribeToOfflinePackProgress((e) => {
+          if (e.pair === `${busy}>${targetCode}`) setBytes(e.bytes);
+        })
+      : null;
+    return () => {
+      clearInterval(timer);
+      unlisten?.then((fn) => fn?.());
+    };
+  }, [busy, offline, targetCode]);
+
+  const download = async (pack: AppleLanguagePack) => {
+    if (!targetCode) return;
+    setBusy(pack.code);
+    setError(null);
+    try {
+      await downloadAppleLanguagePack(pack.code, targetCode, offline);
+    } catch (e) {
+      if (!/cancel|closed/i.test(String(e))) setError(String(e));
+    } finally {
+      setBusy(null);
+      await refresh();
+    }
+  };
+
+  const rows = (packs ?? []).filter((x) => x.status !== "unsupported" && x.code !== targetCode);
+  // The spoken language when it's set, else the first one.
+  const [picked, setPicked] = useState<string | null>(null);
+  const pack =
+    rows.find((x) => x.code === picked) ??
+    rows.find((x) => x.name === settings.source_lang) ??
+    rows[0];
+  const installed = rows.filter((x) => x.status === "installed");
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: "4px 0 8px 38px" }}>
+      <SectionLabel p={p}>LANGUAGE PACK</SectionLabel>
+      {error && <span style={{ fontSize: 13, color: p.red }}>{error}</span>}
+      {!packs && !error && <Fine p={p}>Loading…</Fine>}
+      {pack && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <select
+            value={pack.code}
+            onChange={(e) => setPicked(e.target.value)}
+            aria-label="Translate from"
+            style={selectStyle(p)}
+          >
+            {rows.map((x) => (
+              <option key={x.code} value={x.code}>
+                {x.name}
+                {x.status === "installed" ? " ✓" : ""}
+              </option>
+            ))}
+          </select>
+          <span style={{ fontSize: 14, color: p.body }}>→ {target}</span>
+          {pack.status === "installed" ? (
+            <Done p={p}>DOWNLOADED</Done>
+          ) : (
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void download(pack)}
+              style={{
+                background: "none",
+                border: "none",
+                padding: 0,
+                color: p.accent,
+                font: `600 14px ${SANS}`,
+                textDecoration: "underline",
+                cursor: busy ? "default" : "pointer",
+              }}
+            >
+              {busy === pack.code ? "Downloading…" : "Download"}
+            </button>
+          )}
+        </div>
+      )}
+      {busy && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: CONTROL_W }}>
           <div
-            key={k.id}
-            onClick={k.editable ? () => setEditing(active ? null : k.id) : undefined}
-            title={k.editable && !active ? "Click to change" : undefined}
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              padding: 12,
-              borderRadius: 10,
-              background: p.row,
-              border: `1px solid ${active ? p.accentSoftBorder : p.rowBorder}`,
-              cursor: k.editable ? "pointer" : "default",
+              position: "relative",
+              height: 6,
+              borderRadius: 3,
+              background: p.segOff,
+              overflow: "hidden",
             }}
           >
             <div
-              style={{ width: 8, height: 8, borderRadius: 4, background: k.color, flexShrink: 0 }}
+              style={{
+                position: "absolute",
+                top: 0,
+                bottom: 0,
+                width: "30%",
+                left: `${((tick * 1.5) % 130) - 30}%`,
+                borderRadius: 3,
+                background: p.accent,
+              }}
             />
-            <div style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>{k.name}</span>
-              {active ? (
-                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                  {HOTKEY_PRESETS.map((preset) => (
-                    <Chip
-                      key={preset.value}
-                      p={p}
-                      on={k.value === preset.value}
-                      onClick={() => save(k.id, preset.value)}
-                    >
-                      {preset.label}
-                    </Chip>
-                  ))}
-                  {k.id === "translate" && (
-                    <Chip p={p} on={!k.value} onClick={() => save(k.id, "")}>
-                      Off
-                    </Chip>
-                  )}
-                </div>
-              ) : (
-                <span style={{ fontSize: 12, color: p.dim }}>{k.hint}</span>
-              )}
-            </div>
-            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-              {active ? (
-                <span
-                  style={{
-                    font: `600 11px ${MONO}`,
-                    color: conflict ? p.red : p.accent,
-                    padding: "6px 8px",
-                    borderRadius: 6,
-                    border: `1px dashed ${conflict ? p.red : p.accentSoftBorder}`,
-                  }}
-                >
-                  {conflict ? "USED BY DICTATE" : "PRESS KEYS…"}
-                </span>
-              ) : k.value ? (
-                keycaps(k.value).map((key) => (
-                  <Keycap key={key} p={p}>
-                    {key}
-                  </Keycap>
-                ))
-              ) : k.editable ? (
-                <span style={{ font: `600 11px ${MONO}`, color: p.accent }}>SET</span>
-              ) : null}
-            </div>
           </div>
-        );
-      })}
+          <span style={{ font: `500 12px ${MONO}`, color: p.dim }}>
+            {offline
+              ? `DOWNLOADING · ${formatBytes(bytes)}`
+              : "DOWNLOADING · FOLLOW APPLE'S WINDOW"}
+          </span>
+        </div>
+      )}
+      {installed.length > 0 && (
+        <details>
+          <summary
+            style={{ cursor: "pointer", fontSize: 13, color: p.dim, listStylePosition: "inside" }}
+          >
+            {installed.length} downloaded into {target}
+          </summary>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+              gap: "4px 16px",
+              marginTop: 8,
+              maxHeight: 140,
+              overflowY: "auto",
+              fontSize: 13,
+              color: p.body,
+            }}
+          >
+            {installed.map((x) => (
+              <span key={x.code}>✓ {x.name}</span>
+            ))}
+          </div>
+        </details>
+      )}
     </div>
   );
 }
 
-/** The text style: the same presets as Settings → Text. */
-function StyleStage({ p }: { p: Palette }) {
+function TranslationStep({ p, place }: { p: Palette; place: string }) {
+  const { settings, updateSettings } = useSettingsContext();
+  const [apple, setApple] = useState<AppleTranslationInfo | null>(null);
+  useEffect(() => {
+    fetchAppleTranslationInfo()
+      .then(setApple)
+      .catch(() => setApple(null));
+  }, []);
+  const active = providerKey(settings.translation_provider);
+  const recommended = apple?.available ? "Apple" : "Offline";
+  const options = TRANSLATORS.filter(
+    (o) =>
+      !o.apple ||
+      (IS_MAC && apple?.available && (o.apple === "native" || !apple.intelligence_reason)),
+  );
+  return (
+    <>
+      <Title>Where translation happens</Title>
+      <Lede p={p}>
+        This is the privacy choice. By default, translation runs on {place} too, so your words stay
+        here.
+      </Lede>
+      <div role="radiogroup" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {options.map((o) => {
+          const on = o.value === active;
+          return (
+            <React.Fragment key={o.value}>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => updateSettings({ translation_provider: o.value })}
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  alignItems: "flex-start",
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  background: on ? p.accentSoft : p.row,
+                  border: `1px solid ${on ? p.accentSoftBorder : p.rowBorder}`,
+                  color: p.text,
+                  textAlign: "left",
+                  cursor: "pointer",
+                  font: `400 14px ${SANS}`,
+                }}
+              >
+                <span
+                  aria-hidden
+                  style={{
+                    width: 14,
+                    height: 14,
+                    marginTop: 2,
+                    flexShrink: 0,
+                    borderRadius: "50%",
+                    border: `1.5px solid ${on ? p.accent : p.dashed}`,
+                    boxShadow: on ? `inset 0 0 0 3px ${p.card}` : undefined,
+                    background: on ? p.accent : "transparent",
+                  }}
+                />
+                <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontWeight: 600, fontSize: 15 }}>{o.label}</span>
+                    {o.value === recommended && (
+                      <span style={{ font: `600 11px ${MONO}`, color: p.accentText }}>DEFAULT</span>
+                    )}
+                  </span>
+                  <span style={{ color: p.body, lineHeight: 1.45 }}>{o.body}</span>
+                  <span style={{ fontSize: 12.5, color: p.dim }}>{o.sub}</span>
+                </span>
+              </button>
+              {on && (o.value === "Apple" || o.value === "Offline") && (
+                <LanguagePacks p={p} offline={o.value === "Offline"} />
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+      <Divider p={p} />
+      <Lines
+        p={p}
+        lines={[
+          "Cloud services aren't offered here.",
+          `If you connect one later, Bifaria warns you first: text sent there leaves ${place}.`,
+        ]}
+      />
+    </>
+  );
+}
+
+// ── Text style ──────────────────────────────────────────────────────────────
+
+const STYLE_SAY = "um so I think we can ship it on, uh, friday, no, monday if the the tests pass";
+const STYLE_PASTES: Record<Preset, string> = {
+  natural: "So I think we can ship it on Friday, no, Monday if the tests pass.",
+  ai: "I think we can ship it on Monday if the tests pass.",
+  verbatim: STYLE_SAY,
+};
+
+function StyleStep({ p }: { p: Palette }) {
   const { settings, updateSettings } = useSettingsContext();
   const current = presetOf(settings);
-  const styles = STYLES.filter((s) => s.value !== "custom");
+  const styles = STYLES.filter((s) => s.value !== "custom") as {
+    value: Preset;
+    label: string;
+    hint: string;
+  }[];
+  const shown: Preset = current === "custom" ? "natural" : current;
   return (
-    <div
-      style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: 420 }}
-    >
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
-        {styles.map(({ value, label }) => {
-          const on = value === current;
-          return (
-            <button
-              key={value}
-              type="button"
-              onClick={() => updateSettings(PRESETS[value as Preset])}
-              style={{
-                padding: "9px 10px",
-                borderRadius: 9,
-                background: on ? p.orangeSoft : p.row,
-                border: `1px solid ${on ? p.orangeBorder : p.rowBorder}`,
-                color: on ? p.orange : p.text,
-                font: `500 13px ${SANS}`,
-                cursor: "pointer",
-              }}
-            >
-              {label}
-            </button>
-          );
-        })}
+    <>
+      <Title>How should your text look?</Title>
+      <Lede p={p}>Pick a style for pasted text. Change it any time in Settings › Text.</Lede>
+      <Segments
+        p={p}
+        value={current === "custom" ? ("" as Preset) : current}
+        options={styles}
+        onChange={(v) => updateSettings(PRESETS[v])}
+      />
+      <Fine p={p}>
+        {styles.find((s) => s.value === current)?.hint ?? "Your own mix, set in Settings › Text."}
+      </Fine>
+      <Divider p={p} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 560 }}>
+        <SectionLabel p={p}>YOU SAY</SectionLabel>
+        <span style={{ fontSize: 16, fontStyle: "italic", color: p.body }}>“{STYLE_SAY}”</span>
+        <SectionLabel p={p}>BIFARIA PASTES</SectionLabel>
+        <Row p={p}>
+          <span style={{ fontSize: 17 }}>{STYLE_PASTES[shown]}</span>
+        </Row>
       </div>
-      <div style={{ font: `400 12px ${SANS}`, color: p.dim, minHeight: 32, textAlign: "center" }}>
-        {styles.find((s) => s.value === current)?.hint ?? "Your own mix, set in Settings → Text"}
-      </div>
-    </div>
-  );
-}
-
-function LangStage({ p }: { p: Palette }) {
-  const { settings, updateSettings } = useSettingsContext();
-  const target = settings.target_lang || "English";
-  const options = LANGUAGES.some(([, n]) => n === target)
-    ? LANGUAGES
-    : [...LANGUAGES.slice(0, 5), [langCode(target), target] as [string, string]];
-  return (
-    <div
-      style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%", maxWidth: 400 }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          font: `600 11px ${MONO}`,
-          color: p.dim,
-        }}
-      >
-        <span style={{ padding: "3px 7px", borderRadius: 5, border: `1px dashed ${p.dashed}` }}>
-          ANY LANGUAGE
-        </span>
-        <span>→</span>
-        <span
-          style={{ padding: "3px 7px", borderRadius: 5, background: p.orangeSoft, color: p.orange }}
-        >
-          {langCode(target)}
-        </span>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
-        {options.map(([code, name]) => {
-          const on = name === target;
-          return (
-            <button
-              key={code}
-              type="button"
-              onClick={() => updateSettings({ target_lang: name })}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "9px 10px",
-                borderRadius: 9,
-                background: on ? p.orangeSoft : p.row,
-                border: `1px solid ${on ? p.orangeBorder : p.rowBorder}`,
-                color: p.text,
-                font: `500 13px ${SANS}`,
-                cursor: "pointer",
-                textAlign: "left",
-              }}
-            >
-              <span style={{ font: `600 10px ${MONO}`, color: on ? p.orange : p.dim }}>{code}</span>
-              {name}
-            </button>
-          );
-        })}
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -1320,19 +1951,23 @@ function TryStage({
 function OnboardingInner() {
   const { settings } = useSettingsContext();
   const p = useResolvedTheme(settings.theme) === "dark" ? DARK : LIGHT;
-  const [index, setIndex] = useState(0);
+  const [step, setStep] = useState<StepId>("welcome");
   const [t, setT] = useState(0);
   const dl = useModelDownload();
-  const step = STEPS[index] ?? "welcome";
-  const last = index === STEPS.length - 1;
-  const go = (i: number) => setIndex(Math.max(0, Math.min(STEPS.length - 1, i)));
+  const place = IS_MAC ? "this Mac" : "this computer";
 
-  // Mic step: opening the microphone is what makes macOS ask for access.
+  // The Translation step is there only while translation is on.
+  const steps = STEPS.filter((s) => s !== "translation" || settings.translation_mode !== "off");
+  const index = Math.max(0, steps.indexOf(step));
+  const counted = steps.filter((s) => STEP_NAMES[s]);
+  const go = (i: number) => setStep(steps[Math.max(0, Math.min(steps.length - 1, i))] ?? "welcome");
+
+  // Permissions: opening the microphone is what makes macOS ask for access.
   const [micState, setMicState] = useState<MicState>("off");
   const [micLevel, setMicLevel] = useState(0);
   const micOn = micState !== "off";
   useEffect(() => {
-    if (step !== "mic" || !micOn) return;
+    if (step !== "perms" || !micOn) return;
     let alive = true;
     let unlisten: (() => void) | null = null;
     startMicTest(settings.input_device ?? null);
@@ -1353,10 +1988,10 @@ function OnboardingInner() {
     };
   }, [step, micOn, settings.input_device]);
 
-  // Accessibility step: macOS doesn't announce the grant, so check while it's open.
+  // Accessibility: macOS doesn't announce the grant, so check while the step is open.
   const [granted, setGranted] = useState<boolean | null>(null);
   useEffect(() => {
-    if (step !== "access") return;
+    if (step !== "perms" || !IS_MAC) return;
     let alive = true;
     const check = async () => {
       const ok = await checkAccessibility().catch(() => false);
@@ -1370,7 +2005,7 @@ function OnboardingInner() {
     };
   }, [step]);
 
-  // Animation clock for the illustrations.
+  // Animation clock for the pill.
   useEffect(() => {
     const id = setInterval(() => setT((n) => n + 1), TICK_MS);
     return () => clearInterval(id);
@@ -1393,55 +2028,18 @@ function OnboardingInner() {
       : null;
   const translateHint = translateKey ? ` ${translateKey} translates.` : "";
 
-  const copy: Record<StepId, { title: string; body: string }> = {
-    welcome: {
-      title: "Speak anywhere. Bifaria types it.",
-      body: "Press a hotkey, talk, press it again. Your words are transcribed (or translated) and pasted right where your cursor is.",
-    },
-    mic: {
-      title: "Allow microphone access",
-      body: "Bifaria only listens while you record. Nothing is recorded in the background, and speech is turned into text on your computer.",
-    },
-    access: {
-      title: "Let Bifaria paste for you",
-      body: "Accessibility access lets Bifaria notice your hotkey in any app and drop text right where your cursor is.",
-    },
-    keys: {
-      title: "Two hotkeys, that’s it",
-      body: "One to dictate in whatever language you speak, one to translate. Click a hotkey to change it, or change both later in Settings.",
-    },
-    lang: {
-      title: "Translate into…",
-      body: "Speak any language and Bifaria detects it. Pick the language translations should come out in.",
-    },
-    style: {
-      title: "How should your text look?",
-      body: "Pick a style for the text Bifaria pastes. Change it any time in Settings → Text, where you can also fine-tune each step.",
-    },
-    try: {
-      title: "Give it a try",
-      body: practice
-        ? `The speech model is still downloading, so this is a practice run. Press ${key}, say a sentence, press it again.${translateHint} Real recording unlocks when the download finishes.`
-        : `Press ${key} (or the button), say a sentence, then press it again.${translateHint}`,
-    },
-  };
-
-  const next = () => {
-    if (last) {
-      finishOnboarding();
-      return;
-    }
-    if (step === "mic" && micState === "off") setMicState("waiting");
-    go(index + 1);
-  };
+  const last = step === "try";
+  const permsDone = micState === "allowed" && (!IS_MAC || granted === true);
   const nextLabel =
     step === "welcome"
       ? "Get started"
-      : step === "mic" && micState === "off"
-        ? "Allow & continue"
-        : last
-          ? "Finish"
+      : last
+        ? "Start using Bifaria"
+        : step === "perms" && !permsDone
+          ? "Skip for now"
           : "Continue";
+  const next = () => (last ? finishOnboarding() : go(index + 1));
+
   const busy = tryCtl.phase === "tx" || tryCtl.phase === "translate";
   // The button records for real, so it waits for the model; the hotkey still runs the practice.
   const talkOff = busy || practice;
@@ -1455,6 +2053,16 @@ function OnboardingInner() {
           ? "Model not downloaded"
           : "Checking model…";
   const waiting = practice && !busy;
+
+  const ghost: React.CSSProperties = {
+    background: "none",
+    border: `1px solid ${p.ghostBorder}`,
+    color: p.text,
+    borderRadius: 10,
+    padding: "10px 16px",
+    font: `500 14px ${SANS}`,
+    cursor: "pointer",
+  };
 
   return (
     <div
@@ -1473,182 +2081,169 @@ function OnboardingInner() {
         userSelect: "none",
       }}
     >
-      {/* Header: also the window's drag handle */}
+      {/* Header: brand, progress through the counted steps, download status. Also the drag handle. */}
       <div
         data-tauri-drag-region
-        style={{ display: "flex", alignItems: "center", gap: 12, padding: "20px 24px 0" }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 16,
+          padding: "18px 36px 16px",
+          borderBottom: `1px solid ${p.divider}`,
+        }}
       >
         <div data-tauri-drag-region style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <AppMark />
-          <span data-tauri-drag-region style={{ fontSize: 14, fontWeight: 600 }}>
+          <span data-tauri-drag-region style={{ fontSize: 15, fontWeight: 600 }}>
             Bifaria
           </span>
         </div>
+        {STEP_NAMES[step] && (
+          <>
+            <div style={{ display: "flex", gap: 4 }}>
+              {counted.map((id, i) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setStep(id)}
+                  title={STEP_NAMES[id]}
+                  aria-label={STEP_NAMES[id]}
+                  style={{
+                    width: 26,
+                    height: 4,
+                    padding: 0,
+                    border: "none",
+                    borderRadius: 2,
+                    cursor: "pointer",
+                    background:
+                      id === step ? p.accent : i < counted.indexOf(step) ? p.text : p.segOff,
+                    transition: "background 200ms",
+                  }}
+                />
+              ))}
+            </div>
+            <span data-tauri-drag-region style={{ font: `500 12px ${MONO}`, color: p.dim }}>
+              {counted.indexOf(step) + 1} / {counted.length} · {STEP_NAMES[step]}
+            </span>
+          </>
+        )}
         <div data-tauri-drag-region style={{ flex: 1, alignSelf: "stretch" }} />
         <ModelStatus dl={dl} p={p} />
-        <span style={{ font: `500 11px ${MONO}`, color: p.dim }}>
-          {index + 1} / {STEPS.length}
-        </span>
-        {!last && (
-          <button
-            type="button"
-            onClick={() => go(STEPS.length - 1)}
-            style={{
-              background: "none",
-              border: "none",
-              color: p.dim,
-              font: `500 13px ${SANS}`,
-              cursor: "pointer",
-              padding: "6px 4px",
-            }}
-          >
-            Skip
-          </button>
+      </div>
+
+      {/* Body */}
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          padding: "30px 36px 16px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 14,
+        }}
+      >
+        {step === "welcome" && <WelcomeStep p={p} hotkey={key} place={place} />}
+        {step === "perms" && (
+          <PermsStep
+            p={p}
+            micState={micState}
+            micLevel={micLevel}
+            onAllowMic={() => setMicState("waiting")}
+            granted={granted}
+            place={place}
+          />
         )}
+        {step === "model" && <ModelStep p={p} dl={dl} place={place} />}
+        {step === "keys" && <KeysStep p={p} />}
+        {step === "translation" && <TranslationStep p={p} place={place} />}
+        {step === "style" && <StyleStep p={p} />}
+        {step === "try" && (
+          <>
+            <Eyebrow p={p}>ONE MORE THING</Eyebrow>
+            <Title>Try it</Title>
+            <Lede p={p}>
+              {practice
+                ? `The speech model is still downloading, so this is a practice run. Press ${key}, say a sentence, press it again.${translateHint} Real recording unlocks when the download finishes.`
+                : `The speech model is ready. Press ${key} (or the button), say a sentence, then press it again.${translateHint}`}
+            </Lede>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 10,
+                padding: 12,
+                borderRadius: 14,
+                background: p.stage,
+                border: `1px solid ${p.stageBorder}`,
+              }}
+            >
+              <button
+                type="button"
+                onClick={tryCtl.press}
+                disabled={talkOff}
+                title={
+                  waiting ? "Press to talk works once the speech model is downloaded" : undefined
+                }
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  background: waiting
+                    ? `linear-gradient(90deg, ${p.accentSoftBorder} ${dl.percent}%, ${p.accentSoft} ${dl.percent}%)`
+                    : p.accentSoft,
+                  border: `1px solid ${p.accentSoftBorder}`,
+                  color: p.accentText,
+                  borderRadius: 10,
+                  padding: "8px 14px",
+                  font: `500 13px ${SANS}`,
+                  cursor: talkOff ? "default" : "pointer",
+                  opacity: busy ? 0.5 : 1,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {waiting ? (
+                  waitLabel
+                ) : (
+                  <>
+                    {tryCtl.phase === "listen" ? "Press to finish" : "Press to talk"}
+                    <span style={{ font: `600 11px ${MONO}`, opacity: 0.8 }}>{key}</span>
+                  </>
+                )}
+              </button>
+              <TryStage t={t} p={p} practice={practice} onState={setTryCtl} />
+            </div>
+            <Fine p={p}>
+              Everything here can be changed later in Settings: General, Transcription,
+              Translations, Text, Storage, Updates.
+            </Fine>
+          </>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "16px 36px 20px",
+          borderTop: `1px solid ${p.divider}`,
+        }}
+      >
         {/* Closing counts as finishing: the guide doesn't open again on its own. */}
         <button
           type="button"
           onClick={() => finishOnboarding()}
-          title="Close"
-          aria-label="Close"
-          style={{
-            width: 26,
-            height: 26,
-            marginRight: -6,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "none",
-            border: "none",
-            borderRadius: 7,
-            color: p.dim,
-            cursor: "pointer",
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = p.segOff)}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+          style={{ ...ghost, border: "none", color: p.dim, padding: "10px 4px" }}
         >
-          <svg width={12} height={12} viewBox="0 0 12 12" fill="none">
-            <path
-              d="M2.5 2.5l7 7M9.5 2.5l-7 7"
-              stroke="currentColor"
-              strokeWidth={1.6}
-              strokeLinecap="round"
-            />
-          </svg>
+          Finish later
         </button>
-      </div>
-      <div data-tauri-drag-region style={{ display: "flex", gap: 4, padding: "14px 24px 0" }}>
-        {STEPS.map((id, i) => (
-          <div
-            key={id}
-            style={{
-              flex: 1,
-              height: 3,
-              borderRadius: 2,
-              background: i <= index ? p.accent : p.segOff,
-              transition: "background 200ms",
-            }}
-          />
-        ))}
-      </div>
-
-      {/* Stage */}
-      <div style={{ padding: "24px 24px 0" }}>
-        <div
-          style={{
-            height: 200,
-            borderRadius: 14,
-            background: p.stage,
-            border: `1px solid ${p.stageBorder}`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-            boxSizing: "border-box",
-          }}
-        >
-          {step === "welcome" && (
-            <WelcomeStage t={t} p={p} target={langCode(settings.target_lang || "English")} />
-          )}
-          {step === "mic" && (
-            <MicStage
-              p={p}
-              micState={micState}
-              level={micLevel}
-              onAllow={() => setMicState("waiting")}
-            />
-          )}
-          {step === "access" && <AccessStage p={p} granted={granted} />}
-          {step === "keys" && <KeysStage p={p} />}
-          {step === "lang" && <LangStage p={p} />}
-          {step === "style" && <StyleStage p={p} />}
-          {step === "try" && <TryStage t={t} p={p} practice={practice} onState={setTryCtl} />}
-        </div>
-      </div>
-
-      {/* Copy */}
-      <div style={{ padding: "22px 24px 0", display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-.01em" }}>
-          {copy[step].title}
-        </div>
-        <div style={{ fontSize: 14, lineHeight: 1.5, color: p.body, minHeight: 42 }}>
-          {copy[step].body}
-        </div>
-      </div>
-
-      <div style={{ flex: 1 }} />
-
-      {/* Footer */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "20px 24px 24px" }}>
-        {index > 0 && (
-          <button
-            type="button"
-            onClick={() => go(index - 1)}
-            style={{
-              background: "none",
-              border: `1px solid ${p.ghostBorder}`,
-              color: p.text,
-              borderRadius: 10,
-              padding: "10px 16px",
-              font: `500 14px ${SANS}`,
-              cursor: "pointer",
-            }}
-          >
-            Back
-          </button>
-        )}
         <div style={{ flex: 1 }} />
-        {step === "try" && (
-          <button
-            type="button"
-            onClick={tryCtl.press}
-            disabled={talkOff}
-            title={waiting ? "Press to talk works once the speech model is downloaded" : undefined}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              background: waiting
-                ? `linear-gradient(90deg, ${p.accentSoftBorder} ${dl.percent}%, ${p.accentSoft} ${dl.percent}%)`
-                : p.accentSoft,
-              border: `1px solid ${p.accentSoftBorder}`,
-              color: p.accentText,
-              borderRadius: 10,
-              padding: "10px 14px",
-              font: `500 14px ${SANS}`,
-              cursor: talkOff ? "default" : "pointer",
-              opacity: busy ? 0.5 : 1,
-              fontVariantNumeric: "tabular-nums",
-            }}
-          >
-            {waiting ? (
-              waitLabel
-            ) : (
-              <>
-                {tryCtl.phase === "listen" ? "Press to finish" : "Press to talk"}
-                <span style={{ font: `600 11px ${MONO}`, opacity: 0.8 }}>{key}</span>
-              </>
-            )}
+        {index > 0 && (
+          <button type="button" onClick={() => go(index - 1)} style={ghost}>
+            Back
           </button>
         )}
         <button

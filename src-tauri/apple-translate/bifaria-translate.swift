@@ -298,6 +298,13 @@ func handle(_ request: Request) async -> [String: Any] {
         if request.op == "translate" && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return failure("nothing_to_translate", "There is no text to translate")
         }
+        // Text already in the target language (Audio Lab sends no source): nothing to translate,
+        // and Apple calls the same-language pair unsupported.
+        if Locale.Language(identifier: source).languageCode == Locale.Language(identifier: target).languageCode {
+            var result: [String: Any] = ["ok": true, "source": source, "ms": 0]
+            if request.op == "translate" { result["text"] = text }
+            return result
+        }
         let started = Date()
         let key = "\(source)>\(target)>\(preferred?.rawValue ?? "")"
         do {

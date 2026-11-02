@@ -89,10 +89,11 @@ pub struct AppSettings {
     pub annotate_ambiguity: bool,
     #[serde(default = "default_true")]
     pub normalize_structured_values: bool,
-    /// "LLM", "Custom API" or "Apple" (Apple's on-device Translation, macOS 26+).
+    /// "Apple" (Apple's on-device Translation, macOS 26+), "Offline", "LLM" or "Apple Intelligence".
+    /// "Custom API" is hidden from the settings; a saved one keeps working.
     #[serde(default = "default_translation_provider")]
     pub translation_provider: String,
-    /// With the Apple provider: the service ("LLM" or "Custom API") that translates instead when
+    /// With the Apple provider: the service ("LLM" or "Offline") that translates instead when
     /// Apple Translation fails, e.g. for a language pair that isn't downloaded. Empty = none; the
     /// spoken text is pasted as with any failed translation.
     #[serde(default)]
@@ -111,8 +112,6 @@ pub struct AppSettings {
     /// "off" | "light" | "balanced" | "strong": RNNoise strength applied when recording stops.
     #[serde(default = "default_noise_reduction")]
     pub noise_reduction: String,
-    #[serde(default = "default_gemini_model")]
-    pub gemini_model: String,
     #[serde(default)]
     pub mask_confidential: bool,
     #[serde(default)]
@@ -141,6 +140,7 @@ pub struct AppSettings {
     pub local_llm_model: String,
     #[serde(default)]
     pub local_llm_api_key: String,
+    // HIDDEN: Custom API. Not offered in the settings UI; a saved provider still routes here.
     #[serde(default = "default_custom_url")]
     pub custom_api_url: String,
     #[serde(default)]
@@ -154,12 +154,18 @@ pub struct AppSettings {
     pub last_version: Option<String>,
 }
 
+/// True for an address on this computer (Ollama, LM Studio), which keeps the text local.
+pub fn is_local_endpoint(url: &str) -> bool {
+    let url = url.to_lowercase();
+    ["localhost", "127.0.0.1", "0.0.0.0", "[::1]"].iter().any(|host| url.contains(host))
+}
+
 fn default_llm_endpoint() -> String {
-    "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions".to_string()
+    "http://localhost:11434/v1/chat/completions".to_string()
 }
 
 fn default_llm_model() -> String {
-    "gemini-3.6-flash".to_string()
+    "llama3.2".to_string()
 }
 
 fn default_local_url() -> String {
@@ -171,11 +177,11 @@ fn default_local_model() -> String {
 }
 
 fn default_custom_url() -> String {
-    "https://api.openai.com/v1/chat/completions".to_string()
+    String::new()
 }
 
 fn default_custom_model() -> String {
-    "gpt-4o-mini".to_string()
+    String::new()
 }
 
 fn default_prompt_template() -> String {
@@ -189,10 +195,6 @@ fn default_excluded_languages() -> String {
 fn default_mask_threshold() -> u32 { 90 }
 fn default_mask_format() -> String { "***".to_string() }
 
-fn default_gemini_model() -> String {
-    "gemini-3.6-flash".to_string()
-}
-
 
 fn default_device_backend() -> String {
     "auto".to_string()
@@ -202,8 +204,10 @@ fn default_apple_translation_model() -> String {
     "fast".to_string()
 }
 
+/// Apple's on-device translation where it runs (macOS 26+), Firefox's offline models elsewhere, so
+/// nothing leaves the computer by default.
 fn default_translation_provider() -> String {
-    "LLM".to_string()
+    if cfg!(target_os = "macos") && crate::apple_translate::is_available() { "Apple" } else { "Offline" }.to_string()
 }
 
 fn default_true() -> bool {
@@ -276,13 +280,12 @@ impl Default for AppSettings {
             collapse_redundancy: false,
             annotate_ambiguity: false,
             normalize_structured_values: true,
-            translation_provider: "LLM".to_string(),
+            translation_provider: default_translation_provider(),
             apple_fallback_provider: String::new(),
             apple_translation_model: default_apple_translation_model(),
             device_backend: "auto".to_string(),
             audio_chunking: false,
             noise_reduction: default_noise_reduction(),
-            gemini_model: "gemini-3.6-flash".to_string(),
             mask_confidential: false,
             mask_words: String::new(),
             mask_threshold: 90,
@@ -506,6 +509,14 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[test]
+    fn defaults_send_nothing_to_a_cloud_service() {
+        let s = AppSettings::default();
+        assert!(matches!(s.translation_provider.as_str(), "Apple" | "Offline"));
+        assert!(s.llm_endpoint.starts_with("http://localhost"), "the LLM default is local");
+        assert!(s.custom_api_url.is_empty(), "no remote Custom API address by default");
+    }
+
     fn legacy(provider: &str, translate_hotkey: &str) -> AppSettings {
         let mut s = AppSettings::default();
         s.translation_mode = String::new();
@@ -519,7 +530,7 @@ mod tests {
         let mut off = legacy("No Translation", "F5");
         assert!(off.migrate());
         assert_eq!(off.translation_mode, "off");
-        assert_eq!(off.translation_provider, "LLM");
+        assert_eq!(off.translation_provider, super::default_translation_provider());
         assert_eq!(off.active_translate_hotkey(), "");
 
         let mut hotkey = legacy("LLM", "F5");

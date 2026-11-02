@@ -66,7 +66,7 @@ export function PillPreview({ style, t }: { style: PillStyleId; t: Tokens }) {
     subtitle: {
       listening: "Translates if not English",
       transcribing: "Converting speech to text",
-      translating: "Ukrainian → English (Gemini)",
+      translating: "Ukrainian → English (Offline)",
       done: "Text in clipboard",
       error: "",
     }[state],

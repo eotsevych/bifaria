@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { TARGET_LANGUAGES } from "@/lib/languages";
 import type { Tokens } from "@/lib/tokens";
 import {
   fetchAppleTranslationInfo,
@@ -20,30 +21,40 @@ import {
 } from "./SettingsPrimitives";
 import { useSettingsContext } from "./useSettingsContext";
 
-const LLM_MODEL_SUGGESTIONS = [
-  "gemini-3.6-flash",
-  "gemini-2.0-flash",
-  "llama3.2",
-  "mistral",
-  "gpt-4o-mini",
-  "qwen2.5",
-];
+const LLM_MODEL_SUGGESTIONS = ["llama3.2", "qwen2.5", "mistral", "gemma3"];
+
+/** True when the endpoint names another computer, so the spoken text leaves this one. */
+const isRemoteEndpoint = (url: string): boolean => {
+  const value = url.trim();
+  if (!value) return false;
+  try {
+    return !["localhost", "127.0.0.1", "[::1]", "0.0.0.0"].includes(new URL(value).hostname);
+  } catch {
+    return true;
+  }
+};
+
+function RemoteWarning({ t }: { t: Tokens }) {
+  return (
+    <span
+      style={{
+        fontSize: 11,
+        color: t.warnColor,
+        fontFamily: "Inter, sans-serif",
+        marginTop: 6,
+        display: "block",
+        lineHeight: 1.5,
+      }}
+    >
+      Cloud address: your spoken text is sent to a cloud provider, so it leaves this computer and
+      can no longer be kept private here. Nothing else breaks. For more privacy, use Offline or a
+      local model (Ollama, LM Studio).
+    </span>
+  );
+}
 
 const SOURCE_LANG_OPTIONS = [
   { value: "Auto", label: "Auto-detect" },
-  { value: "English", label: "English" },
-  { value: "Ukrainian", label: "Ukrainian" },
-  { value: "Spanish", label: "Spanish" },
-  { value: "French", label: "French" },
-  { value: "German", label: "German" },
-  { value: "Italian", label: "Italian" },
-  { value: "Polish", label: "Polish" },
-  { value: "Japanese", label: "Japanese" },
-  { value: "Chinese", label: "Chinese" },
-  { value: "Russian", label: "Russian" },
-];
-
-const TARGET_LANGUAGES = [
   { value: "English", label: "English" },
   { value: "Ukrainian", label: "Ukrainian" },
   { value: "Spanish", label: "Spanish" },
@@ -104,26 +115,18 @@ const PROVIDERS: {
   {
     value: "LLM",
     label: "LLM (both local & cloud)",
-    bestFor: "The best wording and full control: Gemini, OpenAI, or local Ollama and LM Studio",
+    bestFor:
+      "The best wording and full control, with a model on this computer: Ollama or LM Studio",
     pros: ["Best quality", "Follows your prompt", "Any language"],
-    notes: ["Cloud needs an API key", "Local needs Ollama or LM Studio"],
-  },
-  {
-    value: "Custom API",
-    label: "Custom API",
-    bestFor: "Your own or your company's translation server (OpenAI-compatible)",
-    pros: ["Your own server", "Follows your prompt"],
-    notes: ["Needs an endpoint and key"],
+    notes: [
+      "Needs Ollama or LM Studio running",
+      "A remote server sends your text off this computer",
+    ],
   },
 ];
 
+// HIDDEN: Custom API (a remote server) is not offered; a saved one keeps working until you pick another.
 const LLM_PRESETS = [
-  {
-    name: "Gemini (Cloud)",
-    endpoint: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-    model: "gemini-3.6-flash",
-    hint: "Free daily requests with a Gemini API key (aistudio.google.com/apikey)",
-  },
   {
     name: "Ollama (Local)",
     endpoint: "http://localhost:11434/v1/chat/completions",
@@ -135,12 +138,6 @@ const LLM_PRESETS = [
     endpoint: "http://localhost:1234/v1/chat/completions",
     model: "local-model",
     hint: "Local inference via LM Studio. No API key needed.",
-  },
-  {
-    name: "OpenAI (Cloud)",
-    endpoint: "https://api.openai.com/v1/chat/completions",
-    model: "gpt-4o-mini",
-    hint: "Standard OpenAI endpoint with your OpenAI API key.",
   },
 ];
 
@@ -208,18 +205,15 @@ export default function TranslationsTab({ t }: { t: Tokens }) {
   const currentPrompt = settings.prompt_template || DEFAULT_PROMPT;
 
   const currentEndpoint =
-    settings.llm_endpoint ||
-    settings.local_llm_url ||
-    "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+    settings.llm_endpoint || settings.local_llm_url || "http://localhost:11434/v1/chat/completions";
 
-  const currentModel = settings.llm_model || settings.gemini_model || "gemini-3.6-flash";
+  const currentModel = settings.llm_model || "llama3.2";
   const currentApiKey = settings.llm_api_key || settings.api_key || "";
 
   const applyLlmPreset = (preset: (typeof LLM_PRESETS)[0]) => {
     updateSettings({
       llm_endpoint: preset.endpoint,
       llm_model: preset.model,
-      gemini_model: preset.model,
       local_llm_url: preset.endpoint,
     });
   };
@@ -410,6 +404,18 @@ export default function TranslationsTab({ t }: { t: Tokens }) {
       {/* ── Translation service ── */}
       {!translationOff && (
         <Section title="Translation Service" t={t}>
+          <p
+            style={{
+              margin: "12px 12px 0",
+              fontSize: 11.5,
+              color: t.textDim,
+              fontFamily: "Inter, sans-serif",
+              lineHeight: 1.5,
+            }}
+          >
+            Apple Native, Apple Intelligence and Offline translate on this computer and send nothing
+            anywhere. An LLM does too, if its address is on this computer.
+          </p>
           <div
             role="radiogroup"
             aria-label="Translation service"
@@ -443,7 +449,7 @@ export default function TranslationsTab({ t }: { t: Tokens }) {
         <Section
           title={
             activeProvider === "LLM"
-              ? "LLM Provider Configuration (Local & Cloud)"
+              ? "LLM Configuration"
               : activeProvider === "Apple"
                 ? "Apple Native Translation"
                 : activeProvider === "Apple Intelligence"
@@ -530,7 +536,7 @@ export default function TranslationsTab({ t }: { t: Tokens }) {
 
                 {/* Endpoint URL */}
                 <FormGroup>
-                  <FormLabel t={t}>Endpoint URL (OpenAI-compatible)</FormLabel>
+                  <FormLabel t={t}>Endpoint URL (chat completions)</FormLabel>
                   <FieldInput
                     value={currentEndpoint}
                     onChange={(v) =>
@@ -539,7 +545,7 @@ export default function TranslationsTab({ t }: { t: Tokens }) {
                         local_llm_url: v,
                       })
                     }
-                    placeholder="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+                    placeholder="http://localhost:11434/v1/chat/completions"
                     mono
                     t={t}
                   />
@@ -552,9 +558,10 @@ export default function TranslationsTab({ t }: { t: Tokens }) {
                       display: "block",
                     }}
                   >
-                    Works with Google Gemini, local Ollama (http://localhost:11434), LM Studio
-                    (http://localhost:1234), or OpenAI.
+                    Works with local Ollama (http://localhost:11434) and LM Studio
+                    (http://localhost:1234), or any server that speaks the chat completions API.
                   </span>
+                  {isRemoteEndpoint(currentEndpoint) && <RemoteWarning t={t} />}
                 </FormGroup>
 
                 {/* API Key & Model Name in 2 columns */}
@@ -581,7 +588,7 @@ export default function TranslationsTab({ t }: { t: Tokens }) {
                         display: "block",
                       }}
                     >
-                      Required for Gemini / OpenAI. Leave blank if using localhost.
+                      Needed only for a server you run elsewhere. Leave blank for localhost.
                     </span>
                   </FormGroup>
 
@@ -592,11 +599,10 @@ export default function TranslationsTab({ t }: { t: Tokens }) {
                       onChange={(v) =>
                         updateSettings({
                           llm_model: v,
-                          gemini_model: v,
                           local_llm_model: v,
                         })
                       }
-                      placeholder="gemini-3.6-flash, llama3.2, etc."
+                      placeholder="llama3.2, qwen2.5, etc."
                       mono
                       t={t}
                     />
@@ -608,7 +614,6 @@ export default function TranslationsTab({ t }: { t: Tokens }) {
                           onClick={() =>
                             updateSettings({
                               llm_model: m,
-                              gemini_model: m,
                               local_llm_model: m,
                             })
                           }
@@ -632,18 +637,30 @@ export default function TranslationsTab({ t }: { t: Tokens }) {
               </div>
             )}
 
-            {/* Custom API Mode */}
+            {/* HIDDEN: Custom API is not offered in the choices above. Shown only for a saved one, which still works. */}
             {activeProvider === "Custom API" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <p
+                  style={{
+                    fontSize: 12,
+                    color: t.textMuted,
+                    fontFamily: "Inter, sans-serif",
+                    margin: 0,
+                  }}
+                >
+                  Custom API is no longer offered. This saved one keeps working until you pick
+                  another service.
+                </p>
                 <FormGroup>
                   <FormLabel t={t}>Endpoint URL (REST)</FormLabel>
                   <FieldInput
-                    value={settings.custom_api_url || "https://api.openai.com/v1/chat/completions"}
+                    value={settings.custom_api_url || ""}
                     onChange={(v) => updateSettings({ custom_api_url: v })}
-                    placeholder="https://api.openai.com/v1/chat/completions"
+                    placeholder="https://your-server/v1/chat/completions"
                     mono
                     t={t}
                   />
+                  {isRemoteEndpoint(settings.custom_api_url || "") && <RemoteWarning t={t} />}
                 </FormGroup>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -660,9 +677,9 @@ export default function TranslationsTab({ t }: { t: Tokens }) {
                   <FormGroup>
                     <FormLabel t={t}>Model Name</FormLabel>
                     <FieldInput
-                      value={settings.custom_api_model || "gpt-4o-mini"}
+                      value={settings.custom_api_model || ""}
                       onChange={(v) => updateSettings({ custom_api_model: v })}
-                      placeholder="gpt-4o-mini"
+                      placeholder="model name"
                       mono
                       t={t}
                     />

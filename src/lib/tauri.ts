@@ -60,7 +60,6 @@ export interface BackendSettings {
   device_backend?: string;
   audio_chunking?: boolean;
   noise_reduction?: NoiseReduction;
-  gemini_model?: string;
   mask_confidential?: boolean;
   mask_words?: string;
   mask_threshold?: number;
@@ -769,6 +768,16 @@ export async function downloadAppleLanguagePack(
   if (!isTauri()) throw new Error("Works only in the desktop app.");
   const command = offline ? "offline_translation_download" : "apple_translation_download";
   await invoke(command, { source, target });
+}
+
+/** Bytes fetched so far while the Offline provider downloads `pair` ("uk>en"). */
+export async function subscribeToOfflinePackProgress(
+  callback: (p: { pair: string; bytes: number }) => void,
+): Promise<UnlistenFn | null> {
+  if (!isTauri()) return null;
+  return await listen<{ pair: string; bytes: number }>("offline-pack-progress", (e) =>
+    callback(e.payload),
+  );
 }
 
 /** Opens System Settings at Language & Region, where Translation Languages are managed. */

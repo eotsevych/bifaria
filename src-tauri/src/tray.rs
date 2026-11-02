@@ -109,7 +109,7 @@ pub fn open_onboarding(app: &AppHandle) {
     // A borderless rounded card (the page draws it), so the window itself is transparent.
     let builder = WebviewWindowBuilder::new(app, "onboarding", WebviewUrl::App("index.html#onboarding".into()))
         .title("Welcome to Bifaria")
-        .inner_size(560.0, 510.0)
+        .inner_size(780.0, 680.0)
         .resizable(false)
         .maximizable(false)
         .decorations(false)
@@ -267,9 +267,8 @@ const TRANSLATION_MODES: [(&str, &str); 3] = [
     ("auto", "Automatic (Launch Hotkey)"),
 ];
 /// Apple's providers are listed only where they can run (macOS 26+); the others everywhere.
-const TRANSLATION_PROVIDERS: [(&str, &str); 5] = [
-    ("LLM", "LLM (both local & cloud)"),
-    ("Custom API", "Custom API"),
+const TRANSLATION_PROVIDERS: [(&str, &str); 4] = [
+    ("LLM", "LLM (local, or your own server)"),
     (crate::offline_translate::PROVIDER, "Offline (on-device)"),
     (crate::apple_translate::PROVIDER, "Apple Native"),
     (crate::apple_translate::INTELLIGENCE_PROVIDER, "Apple Intelligence"),
@@ -283,6 +282,7 @@ fn provider_key(settings: &AppSettings) -> &'static str {
     } else if crate::offline_translate::is_offline(&settings.translation_provider) {
         crate::offline_translate::PROVIDER
     } else if settings.translation_provider.to_lowercase().contains("custom") {
+        // HIDDEN: Custom API has no tray entry any more; a saved one shows no tick.
         "Custom API"
     } else {
         "LLM"

@@ -11,6 +11,7 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Sender};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
@@ -210,6 +211,41 @@ impl Fetch for MirrorFetch {
     }
 }
 
+/// The mirror's downloader that also counts the bytes of a download made of several files.
+struct CountingFetch<F: Fn(u64)> {
+    inner: MirrorFetch,
+    /// Bytes of the files already finished.
+    done: AtomicU64,
+    report: F,
+}
+
+impl<F: Fn(u64)> Fetch for CountingFetch<F> {
+    fn get(&self, url: &str) -> Result<Vec<u8>, String> {
+        self.inner.get(url)
+    }
+
+    fn get_to(
+        &self,
+        url: &str,
+        range_from: u64,
+        sink: &mut dyn Sink,
+        on_progress: &mut dyn FnMut(u64, Option<u64>),
+    ) -> Result<DownloadOutcome, FetchError> {
+        let base = self.done.load(Ordering::Relaxed);
+        let mut last = 0;
+        let result = self.inner.get_to(url, range_from, sink, &mut |n, total| {
+            last = n;
+            (self.report)(base + n);
+            on_progress(n, total);
+        });
+        // A failed attempt is retried from where it stopped (absolute counts), so count it once.
+        if result.is_ok() {
+            self.done.fetch_add(last, Ordering::Relaxed);
+        }
+        result
+    }
+}
+
 fn mirror() -> MirrorFetch {
     MirrorFetch(NetworkFetch::new())
 }
@@ -256,10 +292,16 @@ pub async fn languages(target: &str) -> Result<Vec<LanguagePack>, String> {
 
 /// Downloads every model `source` → `target` needs (both legs when it goes through English) and
 /// checks each file's hash.
-pub async fn download(source: &str, target: &str) -> Result<(), String> {
+/// `report(bytes)` gets the bytes fetched so far, across all the pair's files.
+pub async fn download(
+    source: &str,
+    target: &str,
+    report: impl Fn(u64) + Send + Sync + 'static,
+) -> Result<(), String> {
     let (src, trg) = (source.to_string(), target.to_string());
     tauri::async_runtime::spawn_blocking(move || {
-        fxtranslate::loader::ensure_route_files(&mirror(), &cache(), &src, &trg).map(drop)
+        let fetch = CountingFetch { inner: mirror(), done: AtomicU64::new(0), report };
+        fxtranslate::loader::ensure_route_files(&fetch, &cache(), &src, &trg).map(drop)
     })
     .await
     .map_err(|e| e.to_string())?

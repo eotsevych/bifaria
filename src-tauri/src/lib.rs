@@ -36,7 +36,7 @@ pub mod sound;
 pub mod vitals;
 
 use std::sync::Arc;
-use tauri::{AppHandle, Listener, Manager, State};
+use tauri::{AppHandle, Emitter, Listener, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 use app_controller::{AppController, RecordingMode};
@@ -452,9 +452,19 @@ async fn offline_translation_languages(target_lang: String) -> Result<AppleLangu
 
 /// Downloads the offline models for `source` → `target` (codes).
 #[tauri::command]
-async fn offline_translation_download(source: String, target: String) -> Result<(), String> {
+async fn offline_translation_download(app: AppHandle, source: String, target: String) -> Result<(), String> {
     log::info!("Offline translation: downloading {}", apple_translate::pair_name(Some(&source), &target));
-    offline_translate::download(&source, &target).await
+    // At most ten updates a second: the downloader reports every chunk.
+    let last = std::sync::Mutex::new(std::time::Instant::now() - std::time::Duration::from_secs(1));
+    let pair = format!("{source}>{target}");
+    offline_translate::download(&source, &target, move |bytes| {
+        let mut last = last.lock().unwrap();
+        if last.elapsed() >= std::time::Duration::from_millis(100) {
+            *last = std::time::Instant::now();
+            let _ = app.emit("offline-pack-progress", serde_json::json!({ "pair": pair, "bytes": bytes }));
+        }
+    })
+    .await
 }
 
 #[tauri::command]

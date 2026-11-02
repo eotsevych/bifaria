@@ -24,7 +24,6 @@ import {
 
 const TRANSLATION_SERVICES = [
   { value: "LLM", label: "LLM" },
-  { value: "Custom API", label: "Custom API" },
   { value: "Offline", label: "Offline" },
 ];
 // Offered only where Apple's on-device engines work (macOS 26+).
@@ -95,11 +94,9 @@ export default function AudioLabTab({
       ? "Apple"
       : provider === "apple intelligence"
         ? "Apple Intelligence"
-        : provider.includes("custom")
-          ? "Custom API"
-          : provider === "offline"
-            ? "Offline"
-            : "LLM";
+        : provider === "offline"
+          ? "Offline"
+          : "LLM";
   });
   const [appleAvailable, setAppleAvailable] = useState(false);
   useEffect(() => {

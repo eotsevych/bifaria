@@ -316,7 +316,7 @@ pub fn render_prompt_template(
     rendered
 }
 
-/// Translates text using any OpenAI-compatible provider (Ollama, LM Studio, Groq, Mistral, etc.)
+/// Translates text with an LLM behind a chat-completions endpoint (Ollama, LM Studio, or a server you run)
 pub async fn translate_with_openai_compatible(
     text: &str,
     endpoint_url: &str,

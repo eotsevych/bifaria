@@ -31,7 +31,6 @@ const MODELS = [
 const FALLBACKS = [
   { value: "", label: "Paste the spoken text" },
   { value: "LLM", label: "Translate with the LLM provider" },
-  { value: "Custom API", label: "Translate with the Custom API" },
   { value: "Apple Intelligence", label: "Translate with Apple Intelligence (on-device)" },
 ];
 

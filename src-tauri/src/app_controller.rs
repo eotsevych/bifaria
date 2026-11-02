@@ -265,7 +265,7 @@ pub(crate) fn apply_pill_window_behavior(win: &tauri::WebviewWindow, order_front
 pub struct LabTranslation {
     pub text: String,
     pub ms: u64,
-    /// Service, model and endpoint, e.g. `LLM gemini-3.6-flash at https://…`.
+    /// Service, model and endpoint, e.g. `LLM llama3.2 at http://localhost:11434/…`.
     pub service: String,
 }
 
@@ -308,12 +308,6 @@ fn language_pair(settings: &AppSettings, from_lang: &str) -> Option<String> {
     Some(format!("{} → {}", source, target))
 }
 
-/// True for an endpoint on this computer (Ollama, LM Studio), which needs no API key.
-fn is_local_endpoint(url: &str) -> bool {
-    let url = url.to_lowercase();
-    ["localhost", "127.0.0.1", "0.0.0.0", "[::1]"].iter().any(|host| url.contains(host))
-}
-
 /// The translation settings that are still empty, e.g. `["API key"]`. It checks only that the
 /// fields are filled in; whether the service is reachable is found out when it's called. Apple's
 /// provider has no fields; see `apple_setup_problem`.
@@ -323,7 +317,6 @@ fn missing_translation_settings(settings: &AppSettings) -> Vec<&'static str> {
         return Vec::new();
     }
     let (url, model) = if route.is_custom {
-        // An empty Custom API model is shown and used as gpt-4o-mini.
         (settings.custom_api_url.trim(), route.model.as_str())
     } else {
         (settings.llm_endpoint.trim(), settings.llm_model.trim())
@@ -333,7 +326,7 @@ fn missing_translation_settings(settings: &AppSettings) -> Vec<&'static str> {
     if url.is_empty() {
         missing.push("endpoint URL");
     }
-    if key.is_empty() && !is_local_endpoint(url) {
+    if key.is_empty() && !crate::settings::is_local_endpoint(url) {
         missing.push("API key");
     }
     if model.is_empty() {
@@ -371,6 +364,7 @@ impl TranslationRoute {
         let is_apple = crate::apple_translate::is_apple(&settings.translation_provider);
         let is_intelligence = crate::apple_translate::is_apple_intelligence(&settings.translation_provider);
         let is_offline = crate::offline_translate::is_offline(&settings.translation_provider);
+        // HIDDEN: Custom API, not offered in the settings UI; a saved one still routes here.
         let is_custom = !is_apple && settings.translation_provider.to_lowercase().contains("custom");
         let endpoint = if !settings.llm_endpoint.trim().is_empty() {
             settings.llm_endpoint.trim().to_string()
@@ -378,13 +372,6 @@ impl TranslationRoute {
             settings.local_llm_url.trim().to_string()
         } else {
             String::new()
-        };
-        // A native Gemini endpoint takes the key in its URL, which request errors then show in
-        // logs and on the pill; Gemini's OpenAI-compatible endpoint takes it in a header.
-        let endpoint = if endpoint.is_empty() || (endpoint.contains("generativelanguage.googleapis.com") && !endpoint.contains("/openai")) {
-            GEMINI_OPENAI_ENDPOINT.to_string()
-        } else {
-            endpoint
         };
         let key = if !settings.llm_api_key.trim().is_empty() {
             settings.llm_api_key.trim().to_string()
@@ -394,19 +381,11 @@ impl TranslationRoute {
             settings.local_llm_api_key.trim().to_string()
         };
         let model = if is_custom {
-            if settings.custom_api_model.trim().is_empty() {
-                "gpt-4o-mini".to_string()
-            } else {
-                settings.custom_api_model.trim().to_string()
-            }
+            settings.custom_api_model.trim().to_string()
         } else if !settings.llm_model.trim().is_empty() {
             settings.llm_model.trim().to_string()
-        } else if !settings.gemini_model.trim().is_empty() {
-            settings.gemini_model.trim().to_string()
-        } else if !settings.local_llm_model.trim().is_empty() {
-            settings.local_llm_model.trim().to_string()
         } else {
-            "gemini-3.6-flash".to_string()
+            settings.local_llm_model.trim().to_string()
         };
         Self { is_custom, is_apple, is_intelligence, is_offline, endpoint, key, model }
     }
@@ -425,7 +404,7 @@ impl TranslationRoute {
         }
     }
 
-    /// One-line description for logs, e.g. `LLM gemini-3.6-flash at https://…`.
+    /// One-line description for logs, e.g. `LLM llama3.2 at http://localhost:11434/…`.
     fn describe(&self, settings: &AppSettings) -> String {
         if self.is_apple {
             return "Apple Translation (on-device)".to_string();
@@ -548,6 +527,7 @@ impl TranslationRoute {
             return crate::apple_translate::generate(&prompt, TRANSLATION_TIMEOUT).await;
         }
         let request = async {
+            // HIDDEN: Custom API branch (see `is_custom`).
             if self.is_custom {
                 crate::translate::translate_with_openai_compatible(
                     text,
@@ -721,7 +701,6 @@ fn mic_dropout_message(report: &crate::audio::MicReport) -> (&'static str, Strin
 const MIC_SETTING: &str = "Settings → General → Microphone input";
 /// How long an error that needs reading stays on screen.
 const LONG_ERROR_HOLD: Duration = Duration::from_secs(9);
-const GEMINI_OPENAI_ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 /// Recordings stop on their own after this long.
 const MAX_RECORDING: Duration = Duration::from_secs(15 * 60);
 /// How long the start chime waits for the mic's first audio before playing anyway.
@@ -1238,8 +1217,10 @@ impl AppController {
     }
 
     pub fn is_model_loaded(&self) -> bool {
-        let tr_loaded = self.transcriber.lock().map(|t| t.has_context()).unwrap_or(false);
-        let pk_loaded = self.parakeet_transcriber.lock().map(|p| p.has_model()).unwrap_or(false);
+        // try_lock: a model loading holds its lock for seconds (17 s on the first Neural Engine
+        // load), and stopping a recording asks this for the tray icon; waiting froze the stop.
+        let tr_loaded = self.transcriber.try_lock().map(|t| t.has_context()).unwrap_or(false);
+        let pk_loaded = self.parakeet_transcriber.try_lock().map(|p| p.has_model()).unwrap_or(false);
         tr_loaded || pk_loaded
     }
 
@@ -3091,15 +3072,15 @@ mod tests {
     }
 
     #[test]
-    fn translation_route_custom_api_defaults_its_model() {
+    fn translation_route_custom_api_needs_its_model() {
         let mut s = AppSettings::default();
         s.translation_provider = "Custom API".into();
         s.custom_api_url = "https://api.example.com/v1/chat/completions".into();
         s.custom_api_model = String::new();
         let route = TranslationRoute::from_settings(&s);
         assert_eq!(route.label(), "Custom API");
-        assert_eq!(route.model, "gpt-4o-mini");
-        assert_eq!(route.describe(&s), "Custom API gpt-4o-mini at https://api.example.com/v1/chat/completions");
+        assert_eq!(route.model, "");
+        assert!(missing_translation_settings(&s).contains(&"model name"));
     }
 
     #[tokio::test]
@@ -3251,16 +3232,16 @@ mod tests {
     fn cloud_translation_needs_a_key_and_model() {
         let mut s = AppSettings::default();
         s.translation_provider = "LLM".into();
-        s.llm_endpoint = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions".into();
+        s.llm_endpoint = "https://llm.example.com/v1/chat/completions".into();
         s.llm_api_key = String::new();
         s.api_key = String::new();
         s.local_llm_api_key = String::new();
-        s.llm_model = "gemini-3.6-flash".into();
+        s.llm_model = "llama3.2".into();
         assert_eq!(missing_translation_settings(&s), vec!["API key"]);
         s.llm_model = " ".into();
         assert_eq!(missing_translation_settings(&s), vec!["API key", "model name"]);
         s.llm_api_key = "key".into();
-        s.llm_model = "gemini-3.6-flash".into();
+        s.llm_model = "llama3.2".into();
         assert!(missing_translation_settings(&s).is_empty());
     }
 
@@ -3285,10 +3266,12 @@ mod tests {
         s.custom_api_url = String::new();
         s.custom_api_key = String::new();
         s.custom_api_model = String::new();
-        assert_eq!(missing_translation_settings(&s), vec!["endpoint URL", "API key"]);
-        s.custom_api_url = "https://api.openai.com/v1/chat/completions".into();
+        assert_eq!(missing_translation_settings(&s), vec!["endpoint URL", "API key", "model name"]);
+        s.custom_api_url = "https://api.example.com/v1/chat/completions".into();
         s.custom_api_key = "sk".into();
-        assert!(missing_translation_settings(&s).is_empty(), "an empty model falls back to gpt-4o-mini");
+        assert_eq!(missing_translation_settings(&s), vec!["model name"]);
+        s.custom_api_model = "my-model".into();
+        assert!(missing_translation_settings(&s).is_empty());
     }
 
     #[test]

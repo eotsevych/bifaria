@@ -43,7 +43,7 @@ pub struct TranscriptionDiagnosticLog {
     #[serde(default)]
     pub translation_error: Option<String>,
     /// The service that translated, e.g. "Apple Translation (on-device) uk → en" or "LLM
-    /// gemini-3.6-flash at …". None when translation was skipped.
+    /// llama3.2 at …". None when translation was skipped.
     #[serde(default)]
     pub translation_provider: Option<String>,
     pub final_text: String,

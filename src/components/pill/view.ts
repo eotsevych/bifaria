@@ -102,7 +102,7 @@ export function formatTimer(secs: number): string {
   return `${mins}:${s < 10 ? "0" : ""}${s}`;
 }
 
-/** The languages in a translating subtitle such as "Ukrainian → English (Gemini)". */
+/** The languages in a translating subtitle such as "Ukrainian → English (Ollama)". */
 export function parseDirection(subtitle: string | null | undefined): [string, string] | null {
   const m = /^(.+?) → (.+?)(?: \(.*\))?$/.exec(subtitle ?? "");
   return m && m[1] && m[2] ? [m[1], m[2]] : null;
