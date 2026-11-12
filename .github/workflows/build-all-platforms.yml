@@ -219,6 +219,7 @@ jobs:
       - name: Build the speech helper
         env:
           ENGINE_TARGET_DIR: C:/te
+          ENGINE_WORK_DIR: C:/ov
         run: scripts/build_engine.sh
 
       # transcribe-cpp's DLLs need the C++ and OpenMP runtimes; ship them next to the helper.

@@ -67,3 +67,4 @@ store-shots/
 # The Windows/Linux speech helper and its libraries, built by scripts/build_engine.sh.
 src-tauri/engine-bundle/
 src-tauri/engine/runtime-libs/
+src-tauri/engine/openvino-build/

@@ -39,6 +39,24 @@ const V3_GGUF: ModelFiles = ModelFiles {
     url: "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/85ac09ea12fc4b1112fa76810059364bc6adc9de",
 };
 
+/// Parakeet v3 for OpenVINO (Intel GPU, NPU, CPU) through eddy in the Windows/Linux helper, from
+/// FluidInference (~1.2 GB, fp16 encoder).
+const V3_OV: ModelFiles = ModelFiles {
+    dir: "parakeet-tdt-0.6b-v3-ov",
+    files: &[
+        ("parakeet_melspectogram.xml", 49_228),
+        ("parakeet_melspectogram.bin", 477_078),
+        ("parakeet_encoder.xml", 2_087_748),
+        ("parakeet_encoder.bin", 1_185_869_036),
+        ("parakeet_decoder.xml", 35_652),
+        ("parakeet_decoder.bin", 23_604_560),
+        ("parakeet_joint.xml", 13_798),
+        ("parakeet_joint.bin", 12_642_332),
+        ("parakeet_vocab.json", 119_760),
+    ],
+    url: "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-ov/resolve/b299728668074299b2d19208d30d28460ad81adb",
+};
+
 /// Parakeet Ultra as GGUF for transcribe-cpp, Q8.
 const ULTRA_GGUF: ModelFiles = ModelFiles {
     dir: "parakeet-ultra-gguf",
@@ -170,8 +188,42 @@ pub fn set_device(device: &str) {
         "directml" => "directml",
         "vulkan" => "vulkan",
         "ggml" => "ggml",
+        "ov-gpu" => "ov-gpu",
+        "ov-npu" => "ov-npu",
+        "ov-cpu" => "ov-cpu",
         _ => "ane",
     };
+}
+
+/// OpenVINO's devices as (id, name), asked from the helper once; empty without OpenVINO.
+fn openvino_devices() -> &'static [(String, String)] {
+    static DEVICES: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
+    DEVICES.get_or_init(|| {
+        let list = || -> Result<Vec<(String, String)>, String> {
+            let mut helper = AneHelper::spawn(&engine_helper().ok_or("no helper")?)?;
+            let answer = helper.ask(json!({ "op": "devices" }))?;
+            if let Some(why) = answer["message"].as_str() {
+                log::info!("OpenVINO isn't available: {why}");
+            }
+            Ok(answer["openvino"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|d| Some((d["id"].as_str()?.to_string(), d["name"].as_str()?.to_string()))).collect())
+                .unwrap_or_default())
+        };
+        list().unwrap_or_else(|e| {
+            log::warn!("Couldn't list OpenVINO's devices: {e}");
+            Vec::new()
+        })
+    })
+}
+
+/// The OpenVINO device for a Settings value ("ov-gpu" → "GPU").
+fn openvino_id(device: &str) -> &'static str {
+    match device {
+        "ov-gpu" => "GPU",
+        "ov-npu" => "NPU",
+        _ => "CPU",
+    }
 }
 
 /// The folder of the Windows/Linux helper and its libraries (the app's resources/engine).
@@ -179,6 +231,10 @@ static ENGINE_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
 pub fn set_engine_dir(dir: PathBuf) {
     let _ = ENGINE_DIR.set(dir);
+    // Asking OpenVINO for its devices takes a moment; do it now, not when Settings opens.
+    if engine_helper().is_some() {
+        std::thread::spawn(openvino_devices);
+    }
 }
 
 /// The transcribe-cpp helper (src-tauri/engine) on Windows and Linux, when bundled.
@@ -208,6 +264,9 @@ fn device_name(device: &str) -> &'static str {
         "directml" => "the GPU (DirectML)",
         "vulkan" => "the GPU (Vulkan)",
         "ggml" => "the CPU (ggml)",
+        "ov-gpu" => "the GPU (OpenVINO)",
+        "ov-npu" => "the NPU (OpenVINO)",
+        "ov-cpu" => "the CPU (OpenVINO)",
         _ => "the Neural Engine",
     }
 }
@@ -243,6 +302,14 @@ pub fn devices(model_name: &str) -> Vec<(&'static str, String)> {
         }
         out.push(("ggml", "CPU · ggml".to_string()));
     }
+    if v.ov.is_some() && engine_helper().is_some() {
+        // Intel's runtime: its GPU (the first one), NPU and CPU, as far as this computer has them.
+        for (value, kind) in [("ov-gpu", "GPU"), ("ov-npu", "NPU"), ("ov-cpu", "CPU")] {
+            if let Some((_, name)) = openvino_devices().iter().find(|(id, _)| id == kind || id.starts_with(&format!("{kind}."))) {
+                out.push((value, format!("{kind} · OpenVINO ({name})")));
+            }
+        }
+    }
     out
 }
 
@@ -257,6 +324,8 @@ pub struct Variant {
     ane: Option<&'static ModelFiles>,
     /// GGUF build for the transcribe-cpp helper (Windows, Linux).
     gguf: Option<&'static ModelFiles>,
+    /// OpenVINO build for eddy in the same helper (Windows, Linux).
+    ov: Option<&'static ModelFiles>,
     /// FluidAudio's model version the helper loads it as.
     ane_version: &'static str,
     /// Oldest macOS its Core ML build runs on (Phonon-2's encoder format needs macOS 15).
@@ -270,6 +339,7 @@ const V3: Variant = Variant {
     cpu: Some(&ONNX),
     ane: Some(&NEURAL_ENGINE),
     gguf: Some(&V3_GGUF),
+    ov: Some(&V3_OV),
     ane_version: "v3",
     min_macos: 14,
 };
@@ -280,6 +350,7 @@ const ULTRA: Variant = Variant {
     cpu: None,
     ane: Some(&ULTRA_ANE),
     gguf: Some(&ULTRA_GGUF),
+    ov: None,
     ane_version: "ultra",
     min_macos: 14,
 };
@@ -290,6 +361,7 @@ const REDUX: Variant = Variant {
     cpu: None,
     ane: Some(&REDUX_ANE),
     gguf: None,
+    ov: None,
     ane_version: "redux",
     min_macos: 14,
 };
@@ -300,6 +372,7 @@ const PHONON2: Variant = Variant {
     cpu: None,
     ane: Some(&PHONON2_ANE),
     gguf: None,
+    ov: None,
     ane_version: "phonon2",
     min_macos: 15,
 };
@@ -317,16 +390,21 @@ pub fn variant(model_name: &str) -> &'static Variant {
     VARIANTS.iter().copied().find(|v| v.name == model_name).unwrap_or(&V3)
 }
 
-/// The variant whose helper build (Core ML or GGUF) lives in `dir`; true for Core ML.
-fn helper_build(dir: &Path) -> Option<(&'static Variant, bool)> {
+/// Which helper build a model folder holds.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Build {
+    CoreMl,
+    Gguf,
+    OpenVino,
+}
+
+/// The variant whose helper build lives in `dir`, and which build it is.
+fn helper_build(dir: &Path) -> Option<(&'static Variant, Build)> {
     VARIANTS.iter().copied().find_map(|v| {
-        if v.ane.is_some_and(|a| a.path() == dir) {
-            Some((v, true))
-        } else if v.gguf.is_some_and(|g| g.path() == dir) {
-            Some((v, false))
-        } else {
-            None
-        }
+        [(v.ane, Build::CoreMl), (v.gguf, Build::Gguf), (v.ov, Build::OpenVino)]
+            .into_iter()
+            .find(|(files, _)| files.is_some_and(|f| f.path() == dir))
+            .map(|(_, build)| (v, build))
     })
 }
 
@@ -341,15 +419,21 @@ impl Variant {
     /// Whether this computer can run it: v3 everywhere, the others through Core ML or the
     /// Windows/Linux helper.
     pub fn available(&self) -> bool {
-        self.cpu.is_some() || self.on_neural_engine_here() || (self.gguf.is_some() && engine_helper().is_some())
+        self.cpu.is_some() || self.on_neural_engine_here() || ((self.gguf.is_some() || self.ov.is_some()) && engine_helper().is_some())
     }
 
     /// The build to use: GGUF when Settings picks the helper; else the Core ML one where it runs,
     /// unless only the CPU one is downloaded so far (it's then fetched in the background, see
     /// `download_neural_engine_model`).
     fn current(&self) -> &'static ModelFiles {
-        if let Some(gguf) = self.gguf.filter(|_| !self.on_neural_engine_here() && matches!(device_for(self), "vulkan" | "ggml")) {
-            return gguf;
+        if !self.on_neural_engine_here() {
+            let device = device_for(self);
+            if let Some(gguf) = self.gguf.filter(|_| matches!(device, "vulkan" | "ggml")) {
+                return gguf;
+            }
+            if let Some(ov) = self.ov.filter(|_| device.starts_with("ov-")) {
+                return ov;
+            }
         }
         match (self.ane, self.cpu) {
             (Some(ane), Some(cpu)) if self.on_neural_engine_here() && (ane.ready() || !cpu.ready()) => ane,
@@ -397,6 +481,13 @@ impl AneHelper {
     /// Starts the helper and loads the model from `dir` as FluidAudio's `version` onto `units`
     /// (compiled for that device on the first load, which can take tens of seconds; Core ML caches it).
     fn start(path: &Path, dir: &Path, version: &str, units: &str) -> Result<Self, String> {
+        let mut helper = Self::spawn(path)?;
+        helper.ask(json!({ "op": "load", "dir": dir, "version": version, "units": units }))?;
+        Ok(helper)
+    }
+
+    /// Starts the helper without a model.
+    fn spawn(path: &Path) -> Result<Self, String> {
         let mut command = Command::new(path);
         command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
         #[cfg(windows)]
@@ -414,9 +505,7 @@ impl AneHelper {
         let mut child = command.spawn().map_err(|e| format!("couldn't start {ANE_HELPER}: {e}"))?;
         let stdin = child.stdin.take().ok_or("the helper has no stdin")?;
         let stdout = BufReader::new(child.stdout.take().ok_or("the helper has no stdout")?);
-        let mut helper = Self { child, stdin, stdout };
-        helper.ask(json!({ "op": "load", "dir": dir, "version": version, "units": units }))?;
-        Ok(helper)
+        Ok(Self { child, stdin, stdout })
     }
 
     /// Sends one request and reads its answer.
@@ -523,7 +612,7 @@ impl ParakeetTranscriber {
     pub fn device_label(model_name: &str) -> String {
         let v = variant(model_name);
         let build = v.current();
-        let in_helper = [v.ane, v.gguf].iter().flatten().any(|b| std::ptr::eq(*b, build));
+        let in_helper = [v.ane, v.gguf, v.ov].iter().flatten().any(|b| std::ptr::eq(*b, build));
         if in_helper || onnx_on_directml() {
             return device_name(device_for(v)).to_string();
         }
@@ -675,18 +764,19 @@ impl ParakeetTranscriber {
 
         let rss_before = crate::vitals::process_rss_mb();
         let started = Instant::now();
-        if let Some((v, core_ml)) = helper_build(model_dir) {
-            let helper = if core_ml { ane_helper() } else { engine_helper() }.ok_or("the speech helper isn't available")?;
+        if let Some((v, build)) = helper_build(model_dir) {
+            let helper = if build == Build::CoreMl { ane_helper() } else { engine_helper() }.ok_or("the speech helper isn't available")?;
             // One model at a time: the CPU session goes before the helper loads.
             self.model = None;
             self.ane = None;
             let device = device_for(v);
-            let units = match device {
-                _ if core_ml => device,
-                "ggml" => "cpu",
-                _ => "vulkan",
+            let units = match build {
+                Build::CoreMl => device.to_string(),
+                Build::Gguf if device == "ggml" => "cpu".to_string(),
+                Build::Gguf => "vulkan".to_string(),
+                Build::OpenVino => format!("openvino:{}", openvino_id(device)),
             };
-            self.ane = Some(AneHelper::start(&helper, model_dir, v.ane_version, units)?);
+            self.ane = Some(AneHelper::start(&helper, model_dir, v.ane_version, &units)?);
             self.current_dir = dir_str.to_string();
             self.threads = 0;
             crate::pipeline_logger::log_stage_event(
@@ -847,9 +937,12 @@ mod tests {
         // Each Core ML folder belongs to its own variant, so the helper loads the right version.
         for v in VARIANTS {
             let ane = v.ane.expect("every variant has a Core ML build");
-            assert_eq!(helper_build(&ane.path()).map(|(f, core_ml)| (f.name, core_ml)), Some((v.name, true)));
+            assert_eq!(helper_build(&ane.path()).map(|(f, b)| (f.name, b)), Some((v.name, Build::CoreMl)));
             if let Some(gguf) = v.gguf {
-                assert_eq!(helper_build(&gguf.path()).map(|(f, core_ml)| (f.name, core_ml)), Some((v.name, false)));
+                assert_eq!(helper_build(&gguf.path()).map(|(f, b)| (f.name, b)), Some((v.name, Build::Gguf)));
+            }
+            if let Some(ov) = v.ov {
+                assert_eq!(helper_build(&ov.path()).map(|(f, b)| (f.name, b)), Some((v.name, Build::OpenVino)));
             }
         }
         assert!(helper_build(&ONNX.path()).is_none());

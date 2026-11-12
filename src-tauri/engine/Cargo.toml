@@ -14,6 +14,8 @@ path = "src/main.rs"
 [dependencies]
 base64 = "0.22"
 serde_json = "1"
+# Loads eddy (OpenVINO) only when an OpenVINO device is picked (src/openvino.rs).
+libloading = "0.8"
 
 # As Handy ships it: Vulkan on Windows and Linux x64, the CPU code as per-ISA modules picked at run
 # time, so a build made on CI's CPU still runs on any user's.

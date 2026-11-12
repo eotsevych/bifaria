@@ -1,9 +1,12 @@
 //! bifaria-asr (Windows, Linux): transcribes speech for Bifaria with transcribe-cpp on the GPU
-//! (Vulkan) or the CPU. Same protocol as the Swift helper on the Mac: one JSON request per line on
-//! stdin, one JSON answer per line on stdout, in order.
+//! (Vulkan) or the CPU, or with OpenVINO (eddy) on an Intel GPU, NPU or the CPU. Same protocol as
+//! the Swift helper on the Mac: one JSON request per line on stdin, one JSON answer per line on
+//! stdout, in order.
 //!
 //!   {"op":"load","dir":"<folder with one .gguf>","units":"vulkan"|"cpu"} → {"ok":true,"ms":…,"device":…}
+//!   {"op":"load","dir":"<OpenVINO Parakeet v3 folder>","units":"openvino:GPU|NPU|CPU"} → the same
 //!   {"op":"transcribe","audio":"<base64 of 16 kHz mono f32 little-endian>"} → {"ok":true,"text":…,"ms":…}
+//!   {"op":"devices"} → {"ok":true,"openvino":[{"id":"GPU","name":…},…]} (empty without OpenVINO)
 //!   {"op":"ping"} → {"ok":true}
 //!
 //! Failures are {"ok":false,"error":"not_loaded|bad_request|internal","message":…}.
@@ -16,6 +19,15 @@ use base64::Engine as _;
 use serde_json::{json, Value};
 use transcribe_cpp::{Backend, Model, ModelOptions, RunOptions, Session};
 
+mod openvino;
+
+/// The model in use: transcribe-cpp's or eddy's.
+enum Loaded {
+    /// A session keeps its model alive.
+    Ggml(Session),
+    OpenVino(openvino::Eddy),
+}
+
 const RATE: usize = 16_000;
 /// Longest piece sent to the model at once, cut at the quietest 20 ms in the last 10 s before it
 /// (as Bifaria does for Parakeet on the CPU).
@@ -26,7 +38,7 @@ fn main() {
     if let Err(e) = transcribe_cpp::init_backends_default() {
         eprintln!("couldn't start the compute backends: {e}");
     }
-    let mut loaded: Option<(Model, Session)> = None;
+    let mut loaded: Option<Loaded> = None;
     let stdout = std::io::stdout();
     for line in std::io::stdin().lock().lines() {
         let Ok(line) = line else { break };
@@ -39,22 +51,33 @@ fn main() {
     }
 }
 
-fn handle(request: &Value, loaded: &mut Option<(Model, Session)>) -> Value {
+fn handle(request: &Value, loaded: &mut Option<Loaded>) -> Value {
     match request["op"].as_str() {
         Some("load") => {
             let Some(dir) = request["dir"].as_str() else { return failure("bad_request", "\"load\" needs \"dir\"") };
-            let backend = match request["units"].as_str().unwrap_or("vulkan") {
-                "vulkan" => Backend::Vulkan,
-                "cpu" => Backend::Cpu,
-                other => return failure("bad_request", &format!("Unknown \"units\" {other}; use vulkan or cpu")),
+            let units = request["units"].as_str().unwrap_or("vulkan");
+            let backend = match units {
+                "vulkan" => Some(Backend::Vulkan),
+                "cpu" => Some(Backend::Cpu),
+                _ if units.starts_with("openvino:") => None,
+                other => return failure("bad_request", &format!("Unknown \"units\" {other}; use vulkan, cpu or openvino:<device>")),
             };
             // One model at a time: the old one goes before the new one loads.
             *loaded = None;
             let start = Instant::now();
-            match load(Path::new(dir), backend) {
-                Ok((model, session)) => {
+            let done = match backend {
+                Some(backend) => load(Path::new(dir), backend).map(|(model, session)| {
                     let device = if backend == Backend::Cpu { "CPU".to_string() } else { model.device().map(|d| d.description).unwrap_or_default() };
-                    *loaded = Some((model, session));
+                    (Loaded::Ggml(session), device)
+                }),
+                None => {
+                    let device = units.trim_start_matches("openvino:");
+                    openvino::Eddy::load(Path::new(dir), device).map(|eddy| (Loaded::OpenVino(eddy), format!("OpenVINO {device}")))
+                }
+            };
+            match done {
+                Ok((model, device)) => {
+                    *loaded = Some(model);
                     json!({ "ok": true, "ms": start.elapsed().as_millis() as u64, "device": device })
                 }
                 Err(e) => failure("internal", &e),
@@ -64,14 +87,18 @@ fn handle(request: &Value, loaded: &mut Option<(Model, Session)>) -> Value {
             let Some(audio) = request["audio"].as_str().and_then(|a| base64::engine::general_purpose::STANDARD.decode(a).ok()) else {
                 return failure("bad_request", "\"transcribe\" needs base64 \"audio\"");
             };
-            let Some((_, session)) = loaded.as_mut() else { return failure("not_loaded", "Send \"load\" first") };
+            let Some(model) = loaded.as_mut() else { return failure("not_loaded", "Send \"load\" first") };
             let samples: Vec<f32> = audio.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
             let start = Instant::now();
-            match transcribe(session, &samples) {
+            match transcribe(model, &samples) {
                 Ok(text) => json!({ "ok": true, "text": text, "ms": start.elapsed().as_millis() as u64 }),
                 Err(e) => failure("internal", &e),
             }
         }
+        Some("devices") => match openvino::devices() {
+            Ok(list) => json!({ "ok": true, "openvino": list.iter().map(|(id, name)| json!({ "id": id, "name": name })).collect::<Vec<_>>() }),
+            Err(e) => json!({ "ok": true, "openvino": [], "message": e }),
+        },
         Some("ping") => json!({ "ok": true }),
         Some(op) => failure("bad_request", &format!("Unknown op {op}")),
         None => failure("bad_request", "Expected a JSON object with an \"op\""),
@@ -94,11 +121,14 @@ fn gguf_in(dir: &Path) -> Result<PathBuf, String> {
         .ok_or_else(|| format!("no .gguf model in {}", dir.display()))
 }
 
-fn transcribe(session: &mut Session, samples: &[f32]) -> Result<String, String> {
+fn transcribe(model: &mut Loaded, samples: &[f32]) -> Result<String, String> {
     let mut texts = Vec::new();
     for piece in cut_at_pauses(samples, PIECE_SEC) {
-        let result = session.run(&samples[piece], &RunOptions::default()).map_err(|e| e.to_string())?;
-        let text = result.text.trim();
+        let text = match model {
+            Loaded::Ggml(session) => session.run(&samples[piece], &RunOptions::default()).map_err(|e| e.to_string())?.text,
+            Loaded::OpenVino(eddy) => eddy.transcribe(&samples[piece])?,
+        };
+        let text = text.trim();
         if !text.is_empty() {
             texts.push(text.to_string());
         }
@@ -151,5 +181,9 @@ mod tests {
         assert_eq!(handle(&json!({ "op": "transcribe", "audio": "AAAAAA==" }), &mut loaded)["error"], "not_loaded");
         assert_eq!(handle(&json!({ "op": "load", "dir": "/x", "units": "npu" }), &mut loaded)["error"], "bad_request");
         assert_eq!(handle(&json!({ "op": "nope" }), &mut loaded)["error"], "bad_request");
+        // Without the OpenVINO libraries next to it, the helper says so instead of crashing.
+        let answer = handle(&json!({ "op": "load", "dir": "/x", "units": "openvino:GPU" }), &mut loaded);
+        assert!(answer["message"].as_str().unwrap().contains("OpenVINO isn't available"), "{answer}");
+        assert_eq!(handle(&json!({ "op": "devices" }), &mut loaded)["openvino"], json!([]));
     }
 }
