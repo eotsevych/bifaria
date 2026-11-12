@@ -1032,7 +1032,8 @@ impl AppController {
                         let p = phase_idle.lock().unwrap();
                         *p == AssistantPhase::Idle
                     };
-                    if !is_idle {
+                    // Audio Lab takes the model piece by piece; freeing it in between would reload it each time.
+                    if !is_idle || crate::lab::is_transcribing() {
                         continue;
                     }
                     let elapsed = {
@@ -1282,14 +1283,22 @@ impl AppController {
         &self,
         req: crate::lab::LabExperimentRequest,
     ) -> Result<crate::lab::LabExperimentResult, String> {
-        crate::lab::run_experiment(
+        // The dictation model stays loaded after the run, so the next dictation doesn't reload it.
+        let keep_loaded = self.get_settings().model_name == req.model_name;
+        let res = crate::lab::run_experiment(
             &self.app_handle,
             Arc::clone(&self.transcriber),
             Arc::clone(&self.parakeet_transcriber),
             Arc::clone(&self.phase),
+            keep_loaded,
             req,
         )
-        .await
+        .await;
+        if keep_loaded {
+            // The idle cleanup frees it as after a dictation, counting from now.
+            *self.last_activity.lock().unwrap() = Instant::now();
+        }
+        res
     }
 
     /// Audio Lab's second try at a translation: sends `text` to the chosen service ("LLM",

@@ -290,19 +290,20 @@ pub fn list_available_audio_files() -> Vec<LabAudioItem> {
     list
 }
 
-/// Logs a lab run (load + inference, then the model is freed) and updates the tray's model status.
-fn log_lab_run(app_handle: &AppHandle, model: &str, audio_sec: f32, total_ms: u64, inference_ms: u64) {
-    crate::tray::update_tray_model_status(app_handle, false);
+/// Logs a lab run (load + inference, then the model is kept or freed) and updates the tray's model status.
+fn log_lab_run(app_handle: &AppHandle, model: &str, audio_sec: f32, total_ms: u64, inference_ms: u64, kept: bool) {
+    crate::tray::update_tray_model_status(app_handle, kept);
     crate::pipeline_logger::log_stage_event(
         &get_data_dir(),
         "LAB_RUN",
         &format!(
-            "{} on {:.2} s of audio: load {} ms + inference {} ms ({:.1}x), then freed from RAM; app memory {} MB",
+            "{} on {:.2} s of audio: load {} ms + inference {} ms ({:.1}x), then {}; app memory {} MB",
             model,
             audio_sec,
             total_ms.saturating_sub(inference_ms),
             inference_ms,
             if inference_ms > 0 { audio_sec * 1000.0 / inference_ms as f32 } else { 0.0 },
+            if kept { "kept loaded for dictation" } else { "freed from RAM" },
             crate::vitals::process_rss_mb()
         ),
     );
@@ -387,6 +388,7 @@ pub async fn run_experiment(
     transcriber: Arc<Mutex<Transcriber>>,
     parakeet_transcriber: Arc<Mutex<ParakeetTranscriber>>,
     dictation_phase: Arc<Mutex<AssistantPhase>>,
+    keep_loaded: bool,
     req: LabExperimentRequest,
 ) -> Result<LabExperimentResult, String> {
     let data_dir = get_data_dir();
@@ -500,8 +502,10 @@ pub async fn run_experiment(
                 }
                 Ok::<_, String>((crate::chunking::join_transcripts(&texts), "auto".to_string(), inference_ms))
             })();
-            // A lab run frees its model straight away instead of leaving it to the idle cleanup.
-            pk_arc.lock().unwrap().unload();
+            // Freed now unless it's the dictation model, which the idle cleanup frees later.
+            if !keep_loaded {
+                pk_arc.lock().unwrap().unload();
+            }
             res
         })
         .await
@@ -510,7 +514,7 @@ pub async fn run_experiment(
         let res: (String, String, u64) = res?;
         // Inference alone; the rest of the run was loading the model.
         let inference_ms = if res.2 > 0 { res.2 } else { total_ms };
-        log_lab_run(app_handle, &req.model_name, processed_duration_sec, total_ms, inference_ms);
+        log_lab_run(app_handle, &req.model_name, processed_duration_sec, total_ms, inference_ms, keep_loaded);
 
         let speed_factor = if inference_ms > 0 {
             (processed_duration_sec * 1000.0) / (inference_ms as f32)
@@ -628,15 +632,17 @@ pub async fn run_experiment(
                 all.raw_output = raw.join("\n");
                 Ok::<_, String>(all)
             })();
-            // A lab run frees its model straight away instead of leaving it to the idle cleanup.
-            tr_arc.lock().unwrap().unload();
+            // Freed now unless it's the dictation model, which the idle cleanup frees later.
+            if !keep_loaded {
+                tr_arc.lock().unwrap().unload();
+            }
             res
         })
         .await
         .map_err(|e| e.to_string())?;
         let total_ms = t0.elapsed().as_millis() as u64;
         let res = res?;
-        log_lab_run(app_handle, &req.model_name, processed_duration_sec, total_ms, res.inference_ms);
+        log_lab_run(app_handle, &req.model_name, processed_duration_sec, total_ms, res.inference_ms, keep_loaded);
 
         let speed_factor = if res.inference_ms > 0 {
             (processed_duration_sec * 1000.0) / (res.inference_ms as f32)
