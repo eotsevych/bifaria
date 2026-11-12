@@ -123,9 +123,9 @@ pub fn get_model_catalog() -> Vec<ModelCatalogItem> {
         .iter()
         .map(|(id, name, size_desc, speed_desc, filename)| {
             let (downloaded, file_size_bytes) = if *id == "parakeet" {
-                let ready = crate::parakeet::ParakeetTranscriber::model_ready();
+                let ready = crate::parakeet::ParakeetTranscriber::model_ready(filename);
                 let sz = if ready {
-                    crate::parakeet::ParakeetTranscriber::downloaded_size()
+                    crate::parakeet::ParakeetTranscriber::downloaded_size(filename)
                 } else {
                     0
                 };
@@ -143,7 +143,7 @@ pub fn get_model_catalog() -> Vec<ModelCatalogItem> {
 
             // Parakeet's download is the Neural Engine build on Apple Silicon, smaller than the CPU one.
             let size_desc = if *id == "parakeet" {
-                format_size(crate::parakeet::ParakeetTranscriber::download_size())
+                format_size(crate::parakeet::ParakeetTranscriber::download_size(filename))
             } else {
                 size_desc.to_string()
             };
@@ -158,6 +158,21 @@ pub fn get_model_catalog() -> Vec<ModelCatalogItem> {
             }
         })
         .collect();
+
+    // Parakeet's re-trained siblings (Ultra, Redux, Phonon-2), where this computer can run them:
+    // they ship only for Core ML, so on a Mac with Apple silicon.
+    for v in crate::parakeet::VARIANTS.iter().skip(1).filter(|v| v.available()) {
+        let ready = crate::parakeet::ParakeetTranscriber::model_ready(v.name);
+        items.push(ModelCatalogItem {
+            id: v.name.to_string(),
+            name: v.title.to_string(),
+            size_desc: format_size(crate::parakeet::ParakeetTranscriber::download_size(v.name)),
+            speed_desc: v.summary.to_string(),
+            filename: v.name.to_string(),
+            downloaded: ready,
+            file_size_bytes: if ready { crate::parakeet::ParakeetTranscriber::downloaded_size(v.name) } else { 0 },
+        });
+    }
 
     // Auto-scan models/ for custom .bin files not in the built-in catalog
     let known: std::collections::HashSet<String> = AVAILABLE_MODELS.iter().map(|(_, _, _, _, f)| f.to_string()).collect();

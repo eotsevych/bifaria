@@ -517,7 +517,7 @@ pub async fn run_experiment(
         )
     };
 
-    let is_parakeet = req.model_name == crate::model_download::PARAKEET_MODEL;
+    let is_parakeet = crate::parakeet::is_parakeet(&req.model_name);
 
     if is_parakeet {
         // One model at a time, unless there's room to keep the other (the dictation's) loaded too.
@@ -525,9 +525,9 @@ pub async fn run_experiment(
             transcriber.lock().unwrap().unload();
         }
         report(app_handle, "Loading the model", None);
-        let model_dir = ParakeetTranscriber::ensure_model(app_handle).await?;
+        let model_dir = ParakeetTranscriber::ensure_model(app_handle, &req.model_name).await?;
         let t0 = Instant::now();
-        let max_sec = if ParakeetTranscriber::runs_on_neural_engine() { LAB_PIECE_SEC_NEURAL_ENGINE } else { LAB_PIECE_SEC };
+        let max_sec = if ParakeetTranscriber::runs_on_neural_engine(&req.model_name) { LAB_PIECE_SEC_NEURAL_ENGINE } else { LAB_PIECE_SEC };
         let pieces = lab_pieces(&processed_samples, &chunks, max_sec);
         let (app, pk_arc) = (app_handle.clone(), Arc::clone(&parakeet_transcriber));
         let res = tauri::async_runtime::spawn_blocking(move || {
@@ -819,7 +819,7 @@ mod tests {
         let (samples, rate) = super::decode_audio_file(std::path::Path::new(&path)).unwrap();
         let samples = crate::audio::resample_to_16k(&samples, rate);
         let chunks: Vec<_> = crate::vad::plan_chunks(&samples).into_iter().map(|c| c.range).collect();
-        let dir = crate::parakeet::ParakeetTranscriber::get_model_dir();
+        let dir = crate::parakeet::ParakeetTranscriber::get_model_dir(crate::model_download::PARAKEET_MODEL);
         let mut pk = crate::parakeet::ParakeetTranscriber::new();
         let (chunked, _, chunked_ms, _) = pk.transcribe(&samples, &chunks, &dir).unwrap();
         let (whole, _, whole_ms, _) = pk.transcribe(&samples, &[0..samples.len()], &dir).unwrap();

@@ -62,8 +62,181 @@ const NEURAL_ENGINE: ModelFiles = ModelFiles {
     url: "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml/resolve/main",
 };
 
+/// Parakeet Ultra for Core ML: moondream's post-training of v3, int8-linear encoder. ~632 MB, pinned to revision 95eaa59.
+const ULTRA_ANE: ModelFiles = ModelFiles {
+    dir: "parakeet-ultra-coreml",
+    files: &[
+        ("Decoder.mlmodelc/analytics/coremldata.bin", 243),
+        ("Decoder.mlmodelc/coremldata.bin", 560),
+        ("Decoder.mlmodelc/model.mil", 13_110),
+        ("Decoder.mlmodelc/weights/weight.bin", 23_604_992),
+        ("Encoder.mlmodelc/analytics/coremldata.bin", 243),
+        ("Encoder.mlmodelc/coremldata.bin", 514),
+        ("Encoder.mlmodelc/model.mil", 1_002_653),
+        ("Encoder.mlmodelc/weights/weight.bin", 594_211_328),
+        ("JointDecisionv3.mlmodelc/analytics/coremldata.bin", 243),
+        ("JointDecisionv3.mlmodelc/coremldata.bin", 592),
+        ("JointDecisionv3.mlmodelc/model.mil", 11_777),
+        ("JointDecisionv3.mlmodelc/weights/weight.bin", 12_642_764),
+        ("Preprocessor.mlmodelc/analytics/coremldata.bin", 243),
+        ("Preprocessor.mlmodelc/coremldata.bin", 486),
+        ("Preprocessor.mlmodelc/metadata.json", 2_841),
+        ("Preprocessor.mlmodelc/model.mil", 28_181),
+        ("Preprocessor.mlmodelc/weights/weight.bin", 491_072),
+        ("parakeet_vocab.json", 151_122),
+    ],
+    url: "https://huggingface.co/FluidInference/parakeet-ultra-coreml/resolve/95eaa59a39d4394f047a4dc5cce480388a60d1b6",
+};
+
+/// Parakeet Redux for Core ML: moondream's ternary re-training of v3, 2-bit encoder. ~220 MB, pinned to revision 8c5ef97.
+const REDUX_ANE: ModelFiles = ModelFiles {
+    dir: "parakeet-redux-coreml",
+    files: &[
+        ("Decoder.mlmodelc/analytics/coremldata.bin", 243),
+        ("Decoder.mlmodelc/coremldata.bin", 560),
+        ("Decoder.mlmodelc/model.mil", 13_110),
+        ("Decoder.mlmodelc/weights/weight.bin", 23_604_992),
+        ("Encoder.mlmodelc/analytics/coremldata.bin", 243),
+        ("Encoder.mlmodelc/coremldata.bin", 506),
+        ("Encoder.mlmodelc/model.mil", 965_906),
+        ("Encoder.mlmodelc/weights/weight.bin", 182_389_312),
+        ("JointDecisionv3.mlmodelc/analytics/coremldata.bin", 243),
+        ("JointDecisionv3.mlmodelc/coremldata.bin", 592),
+        ("JointDecisionv3.mlmodelc/model.mil", 11_777),
+        ("JointDecisionv3.mlmodelc/weights/weight.bin", 12_642_764),
+        ("Preprocessor.mlmodelc/analytics/coremldata.bin", 243),
+        ("Preprocessor.mlmodelc/coremldata.bin", 486),
+        ("Preprocessor.mlmodelc/metadata.json", 2_841),
+        ("Preprocessor.mlmodelc/model.mil", 28_181),
+        ("Preprocessor.mlmodelc/weights/weight.bin", 491_072),
+        ("parakeet_vocab.json", 151_122),
+    ],
+    url: "https://huggingface.co/FluidInference/parakeet-redux-coreml/resolve/8c5ef97a29cd120dc76b354b3f22b7fec3b486f9",
+};
+
+/// Phonon-2 for Core ML, English: Fermion Research's re-training of v3; only the default encoder. ~378 MB, pinned to revision 1702fc2.
+const PHONON2_ANE: ModelFiles = ModelFiles {
+    dir: "phonon-2-coreml",
+    files: &[
+        ("Decoder.mlmodelc/analytics/coremldata.bin", 243),
+        ("Decoder.mlmodelc/coremldata.bin", 554),
+        ("Decoder.mlmodelc/model.mil", 13_110),
+        ("Decoder.mlmodelc/weights/weight.bin", 23_604_992),
+        ("Encoder.mlmodelc/analytics/coremldata.bin", 243),
+        ("Encoder.mlmodelc/coremldata.bin", 500),
+        ("Encoder.mlmodelc/model.mil", 2_734_921),
+        ("Encoder.mlmodelc/weights/weight.bin", 338_391_488),
+        ("JointDecisionv3.mlmodelc/analytics/coremldata.bin", 243),
+        ("JointDecisionv3.mlmodelc/coremldata.bin", 586),
+        ("JointDecisionv3.mlmodelc/model.mil", 11_777),
+        ("JointDecisionv3.mlmodelc/weights/weight.bin", 12_642_764),
+        ("Preprocessor.mlmodelc/analytics/coremldata.bin", 243),
+        ("Preprocessor.mlmodelc/coremldata.bin", 486),
+        ("Preprocessor.mlmodelc/metadata.json", 2_841),
+        ("Preprocessor.mlmodelc/model.mil", 28_181),
+        ("Preprocessor.mlmodelc/weights/weight.bin", 491_072),
+        ("parakeet_vocab.json", 151_122),
+    ],
+    url: "https://huggingface.co/FluidInference/phonon-2-coreml/resolve/1702fc22e76f203d5ca464cd5d3ef130a45ce2c0",
+};
+
 /// The helper that runs the Neural Engine build, bundled next to the Bifaria executable.
 const ANE_HELPER: &str = "bifaria-asr";
+
+/// A Parakeet model Bifaria offers. v3 has a CPU (ONNX) and a Neural Engine build; its re-trained
+/// siblings ship only for Core ML, so they're offered where the Neural Engine helper runs.
+pub struct Variant {
+    /// Its `model_name` in settings and the model list.
+    pub name: &'static str,
+    pub title: &'static str,
+    pub summary: &'static str,
+    cpu: Option<&'static ModelFiles>,
+    ane: Option<&'static ModelFiles>,
+    /// FluidAudio's model version the helper loads it as.
+    ane_version: &'static str,
+    /// Oldest macOS its Core ML build runs on (Phonon-2's encoder format needs macOS 15).
+    min_macos: u32,
+}
+
+const V3: Variant = Variant {
+    name: crate::model_download::PARAKEET_MODEL,
+    title: "Parakeet TDT 0.6B v3",
+    summary: "Real-Time (~80-150 ms, 25 langs)",
+    cpu: Some(&ONNX),
+    ane: Some(&NEURAL_ENGINE),
+    ane_version: "v3",
+    min_macos: 14,
+};
+const ULTRA: Variant = Variant {
+    name: "parakeet-ultra",
+    title: "Parakeet Ultra",
+    summary: "Most accurate Parakeet, same speed (25 langs)",
+    cpu: None,
+    ane: Some(&ULTRA_ANE),
+    ane_version: "ultra",
+    min_macos: 14,
+};
+const REDUX: Variant = Variant {
+    name: "parakeet-redux",
+    title: "Parakeet Redux",
+    summary: "Smallest; better than v3 in other languages, a bit worse in English",
+    cpu: None,
+    ane: Some(&REDUX_ANE),
+    ane_version: "redux",
+    min_macos: 14,
+};
+const PHONON2: Variant = Variant {
+    name: "phonon-2",
+    title: "Phonon-2",
+    summary: "English only; the fastest",
+    cpu: None,
+    ane: Some(&PHONON2_ANE),
+    ane_version: "phonon2",
+    min_macos: 15,
+};
+
+/// Every Parakeet model, v3 first.
+pub static VARIANTS: [&Variant; 4] = [&V3, &ULTRA, &REDUX, &PHONON2];
+
+/// Whether `model_name` is one of the Parakeet models (any variant).
+pub fn is_parakeet(model_name: &str) -> bool {
+    VARIANTS.iter().any(|v| v.name == model_name)
+}
+
+/// The Parakeet model called `model_name`, or v3.
+pub fn variant(model_name: &str) -> &'static Variant {
+    VARIANTS.iter().copied().find(|v| v.name == model_name).unwrap_or(&V3)
+}
+
+/// The variant whose Core ML build lives in `dir`.
+fn neural_engine_variant(dir: &Path) -> Option<&'static Variant> {
+    VARIANTS.iter().copied().find(|v| v.ane.is_some_and(|a| a.path() == dir))
+}
+
+impl Variant {
+    /// Its Core ML build can run here: the helper is available and macOS is new enough.
+    fn on_neural_engine_here(&self) -> bool {
+        self.ane.is_some()
+            && ane_helper().is_some()
+            && crate::apple_translate::macos_version().is_some_and(|(major, _)| major >= self.min_macos)
+    }
+
+    /// Whether this computer can run it: v3 everywhere, the others on the Neural Engine.
+    pub fn available(&self) -> bool {
+        self.cpu.is_some() || self.on_neural_engine_here()
+    }
+
+    /// The build to use: the Core ML one where it runs, unless only the CPU one is downloaded so
+    /// far (it's then fetched in the background, see `download_neural_engine_model`).
+    fn current(&self) -> &'static ModelFiles {
+        match (self.ane, self.cpu) {
+            (Some(ane), Some(cpu)) if self.on_neural_engine_here() && (ane.ready() || !cpu.ready()) => ane,
+            (_, Some(cpu)) => cpu,
+            (Some(ane), None) => ane,
+            (None, None) => unreachable!("every variant has a build"),
+        }
+    }
+}
 
 impl ModelFiles {
     fn path(&self) -> PathBuf {
@@ -91,16 +264,6 @@ fn ane_helper() -> Option<PathBuf> {
     (!head.starts_with(b"#!")).then_some(path)
 }
 
-/// The build to use: the Neural Engine one where the helper runs, unless only the CPU one is
-/// downloaded so far (it's then fetched in the background, see `download_neural_engine_model`).
-fn current() -> &'static ModelFiles {
-    if ane_helper().is_some() && (NEURAL_ENGINE.ready() || !ONNX.ready()) {
-        &NEURAL_ENGINE
-    } else {
-        &ONNX
-    }
-}
-
 /// The helper process, kept running so the model stays on the Neural Engine between dictations.
 struct AneHelper {
     child: Child,
@@ -109,9 +272,9 @@ struct AneHelper {
 }
 
 impl AneHelper {
-    /// Starts the helper and loads the model from `dir` (compiled for the Neural Engine on the
-    /// first load, which can take tens of seconds; Core ML caches it after that).
-    fn start(path: &Path, dir: &Path) -> Result<Self, String> {
+    /// Starts the helper and loads the model from `dir` as FluidAudio's `version` (compiled for the
+    /// Neural Engine on the first load, which can take tens of seconds; Core ML caches it after that).
+    fn start(path: &Path, dir: &Path, version: &str) -> Result<Self, String> {
         let mut child = Command::new(path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -121,7 +284,7 @@ impl AneHelper {
         let stdin = child.stdin.take().ok_or("the helper has no stdin")?;
         let stdout = BufReader::new(child.stdout.take().ok_or("the helper has no stdout")?);
         let mut helper = Self { child, stdin, stdout };
-        helper.ask(json!({ "op": "load", "dir": dir }))?;
+        helper.ask(json!({ "op": "load", "dir": dir, "version": version }))?;
         Ok(helper)
     }
 
@@ -204,23 +367,24 @@ impl ParakeetTranscriber {
         Ok(())
     }
 
-    /// Path where the Parakeet model files in use are stored (see `current`).
-    pub fn get_model_dir() -> PathBuf {
-        let dir = current().path();
+    /// Where the files of `model_name`'s build in use are stored (see `Variant::current`).
+    pub fn get_model_dir(model_name: &str) -> PathBuf {
+        let dir = variant(model_name).current().path();
         if !dir.exists() {
             let _ = fs::create_dir_all(&dir);
         }
         dir
     }
 
-    /// True when the model in use has all its files on disk.
-    pub fn model_ready() -> bool {
-        current().ready()
+    /// True when `model_name`'s build in use has all its files on disk.
+    pub fn model_ready(model_name: &str) -> bool {
+        variant(model_name).current().ready()
     }
 
-    /// True when dictations go to the Neural Engine build (it may still be downloading).
-    pub fn runs_on_neural_engine() -> bool {
-        std::ptr::eq(current(), &NEURAL_ENGINE)
+    /// True when `model_name` runs on the Neural Engine build (it may still be downloading).
+    pub fn runs_on_neural_engine(model_name: &str) -> bool {
+        let v = variant(model_name);
+        v.ane.is_some_and(|ane| std::ptr::eq(v.current(), ane))
     }
 
     /// Where Parakeet runs on this computer, for Settings: "the Neural Engine", or the CPU and why.
@@ -235,14 +399,14 @@ impl ParakeetTranscriber {
         }
     }
 
-    /// Download size of the model in use, in bytes.
-    pub fn download_size() -> u64 {
-        current().files.iter().map(|(_, s)| s).sum()
+    /// Download size of `model_name`'s build in use, in bytes.
+    pub fn download_size(model_name: &str) -> u64 {
+        variant(model_name).current().files.iter().map(|(_, s)| s).sum()
     }
 
-    /// Total size of downloaded model files in bytes.
-    pub fn downloaded_size() -> u64 {
-        let model = current();
+    /// Total size of `model_name`'s downloaded files in bytes.
+    pub fn downloaded_size(model_name: &str) -> u64 {
+        let model = variant(model_name).current();
         let dir = model.path();
         model
             .files
@@ -256,47 +420,54 @@ impl ParakeetTranscriber {
             .sum()
     }
 
-    /// Download all model files from HuggingFace. Skips files already on disk.
-    pub async fn ensure_model(app_handle: &AppHandle) -> Result<PathBuf, String> {
-        if Self::model_ready() {
-            return Ok(Self::get_model_dir());
+    /// Downloads `model_name`'s files from Hugging Face. Skips files already on disk.
+    pub async fn ensure_model(app_handle: &AppHandle, model_name: &str) -> Result<PathBuf, String> {
+        let v = variant(model_name);
+        if !v.available() {
+            return Err(format!("{} runs only on the Neural Engine of a Mac with Apple silicon (macOS {}+)", v.title, v.min_macos));
+        }
+        if Self::model_ready(model_name) {
+            return Ok(Self::get_model_dir(model_name));
         }
         // Another caller may already be downloading it; wait, then re-check the disk.
         let _download = crate::model_download::lock().await;
-        if Self::model_ready() {
-            return Ok(Self::get_model_dir());
+        if Self::model_ready(model_name) {
+            return Ok(Self::get_model_dir(model_name));
         }
 
-        let model = crate::model_download::PARAKEET_MODEL;
-        crate::model_download::began(app_handle, model);
-        let result = Self::download_model(app_handle, current()).await;
-        crate::model_download::finished(app_handle, model, &result);
+        crate::model_download::began(app_handle, v.name);
+        let result = Self::download_model(app_handle, v.current(), v.name).await;
+        crate::model_download::finished(app_handle, v.name, &result);
         result
     }
 
     /// Where the CPU model is in use only because the Neural Engine one isn't downloaded yet,
     /// downloads it (once, ~480 MB) so the next dictations run on the Neural Engine. True when it
     /// was downloaded now. The CPU model is kept as the fallback.
-    pub async fn download_neural_engine_model(app_handle: &AppHandle) -> bool {
-        if ane_helper().is_none() || NEURAL_ENGINE.ready() {
+    pub async fn download_neural_engine_model(app_handle: &AppHandle, model_name: &str) -> bool {
+        let v = variant(model_name);
+        // Only a model with both builds starts on the CPU one (v3); the others are Core ML only.
+        let Some(ane) = v.ane.filter(|_| v.cpu.is_some() && v.on_neural_engine_here()) else {
+            return false;
+        };
+        if ane.ready() {
             return false;
         }
         let _download = crate::model_download::lock().await;
-        if NEURAL_ENGINE.ready() {
+        if ane.ready() {
             return false;
         }
-        log::info!("Downloading Parakeet for the Neural Engine");
-        let model = crate::model_download::PARAKEET_MODEL;
-        crate::model_download::began(app_handle, model);
-        let result = Self::download_model(app_handle, &NEURAL_ENGINE).await;
-        crate::model_download::finished(app_handle, model, &result);
+        log::info!("Downloading {} for the Neural Engine", v.title);
+        crate::model_download::began(app_handle, v.name);
+        let result = Self::download_model(app_handle, ane, v.name).await;
+        crate::model_download::finished(app_handle, v.name, &result);
         if let Err(e) = &result {
             log::warn!("Parakeet for the Neural Engine didn't download, staying on the CPU: {e}");
         }
         result.is_ok()
     }
 
-    async fn download_model(app_handle: &AppHandle, model: &ModelFiles) -> Result<PathBuf, String> {
+    async fn download_model(app_handle: &AppHandle, model: &ModelFiles, model_name: &str) -> Result<PathBuf, String> {
         let model_dir = model.path();
         let client = reqwest::Client::new();
         let total_size: u64 = model.files.iter().map(|(_, s)| s).sum();
@@ -343,7 +514,7 @@ impl ParakeetTranscriber {
                 let percent = (cumulative as f64 / total_size as f64 * 100.0) as u32;
                 crate::model_download::progress(
                     app_handle,
-                    crate::model_download::PARAKEET_MODEL,
+                    model_name,
                     percent,
                     cumulative,
                     total_size,
@@ -368,17 +539,18 @@ impl ParakeetTranscriber {
 
         let rss_before = crate::vitals::process_rss_mb();
         let started = Instant::now();
-        if model_dir == NEURAL_ENGINE.path() {
+        if let Some(v) = neural_engine_variant(model_dir) {
             let helper = ane_helper().ok_or("the Neural Engine helper isn't available")?;
             // One model at a time: the CPU session goes before the helper loads.
             self.model = None;
-            self.ane = Some(AneHelper::start(&helper, model_dir)?);
+            self.ane = None;
+            self.ane = Some(AneHelper::start(&helper, model_dir, v.ane_version)?);
             self.current_dir = dir_str.to_string();
             self.threads = 0;
             crate::pipeline_logger::log_stage_event(
                 &get_data_dir(),
                 "MODEL_LOAD",
-                &format!("Loaded Parakeet TDT on the Neural Engine in {} ms (in {ANE_HELPER})", started.elapsed().as_millis()),
+                &format!("Loaded {} on the Neural Engine in {} ms (in {ANE_HELPER})", v.title, started.elapsed().as_millis()),
             );
             return Ok(());
         }
@@ -419,12 +591,12 @@ impl ParakeetTranscriber {
         }
 
         let mut model_dir = model_dir.to_path_buf();
-        if model_dir == NEURAL_ENGINE.path() {
+        if neural_engine_variant(&model_dir).is_some() {
             match self.transcribe_on_neural_engine(samples, &model_dir) {
                 Ok(done) => return Ok(done),
                 // A helper that failed is started afresh next time; this recording goes to the CPU.
                 Err(e) if ONNX.ready() => {
-                    log::warn!("Parakeet on the Neural Engine failed ({e}); transcribing on the CPU");
+                    log::warn!("Parakeet on the Neural Engine failed ({e}); transcribing with Parakeet v3 on the CPU");
                     self.ane = None;
                     model_dir = ONNX.path();
                 }
@@ -518,6 +690,24 @@ fn frame_energy(frame: &[f32]) -> f32 {
 mod tests {
     use super::*;
 
+    #[test]
+    fn finds_parakeet_variants_by_name_and_folder() {
+        assert!(is_parakeet(crate::model_download::PARAKEET_MODEL));
+        assert!(is_parakeet("parakeet-ultra") && is_parakeet("parakeet-redux") && is_parakeet("phonon-2"));
+        assert!(!is_parakeet("ggml-base.bin"));
+        assert_eq!(variant("parakeet-ultra").title, "Parakeet Ultra");
+        // An unknown name falls back to v3.
+        assert_eq!(variant("something-else").name, crate::model_download::PARAKEET_MODEL);
+        // Each Core ML folder belongs to its own variant, so the helper loads the right version.
+        for v in VARIANTS {
+            let ane = v.ane.expect("every variant has a Core ML build");
+            assert_eq!(neural_engine_variant(&ane.path()).map(|f| f.name), Some(v.name));
+        }
+        assert!(neural_engine_variant(&ONNX.path()).is_none());
+        // v3 runs anywhere (its CPU build); the others only where the Neural Engine helper runs.
+        assert!(V3.available());
+    }
+
     /// The helper protocol, against a stand-in that loads anything and answers "hi" to audio.
     #[cfg(unix)]
     #[test]
@@ -528,12 +718,13 @@ mod tests {
         let fake = dir.join("bifaria-asr");
         fs::write(
             &fake,
-            "#!/bin/sh\nwhile read -r line; do case \"$line\" in\n*'\"load\"'*) echo '{\"ok\":true,\"ms\":1}';;\n*'\"transcribe\"'*) echo '{\"ok\":true,\"text\":\" hi \",\"ms\":1}';;\n*) echo '{\"ok\":false,\"error\":\"bad_request\",\"message\":\"no\"}';;\nesac; done\n",
+            "#!/bin/sh\nwhile read -r line; do case \"$line\" in\n*'\"op\":\"load\"'*'\"version\":\"ultra\"'*) echo '{\"ok\":true,\"ms\":1}';;\n*'\"transcribe\"'*) echo '{\"ok\":true,\"text\":\" hi \",\"ms\":1}';;\n*) echo '{\"ok\":false,\"error\":\"bad_request\",\"message\":\"no\"}';;\nesac; done\n",
         )
         .unwrap();
         fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
 
-        let mut helper = AneHelper::start(&fake, &dir).unwrap();
+        // The stand-in accepts only a load that names the model version.
+        let mut helper = AneHelper::start(&fake, &dir, "ultra").unwrap();
         assert_eq!(helper.transcribe(&[0.1, -0.2]).unwrap(), "hi");
         assert_eq!(helper.ask(json!({ "op": "other" })).unwrap_err(), "no");
         drop(helper);

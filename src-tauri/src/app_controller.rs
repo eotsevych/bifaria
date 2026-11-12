@@ -1104,9 +1104,9 @@ impl AppController {
         if !settings.audio_chunking || !crate::model_download::is_model_present(&settings.model_name) {
             return None;
         }
-        if settings.model_name == crate::model_download::PARAKEET_MODEL {
+        if crate::parakeet::is_parakeet(&settings.model_name) {
             let parakeet = Arc::clone(&self.parakeet_transcriber);
-            let dir = crate::parakeet::ParakeetTranscriber::get_model_dir();
+            let dir = crate::parakeet::ParakeetTranscriber::get_model_dir(&settings.model_name);
             return Some(Box::new(move |piece: &[f32]| {
                 let mut pk = parakeet.lock().unwrap_or_else(|e| e.into_inner());
                 let (text, ..) = pk.transcribe(piece, &[0..piece.len()], &dir)?;
@@ -1184,7 +1184,7 @@ impl AppController {
 
         // Single Model Policy: If active model changed, drop the other from RAM immediately
         if old_model != new_settings.model_name {
-            if new_settings.model_name == crate::model_download::PARAKEET_MODEL {
+            if crate::parakeet::is_parakeet(&new_settings.model_name) {
                 let mut tr = self.transcriber.lock().unwrap();
                 tr.unload();
             } else {
@@ -1993,21 +1993,21 @@ impl AppController {
         let model_name = model_name.to_string();
 
         tauri::async_runtime::spawn(async move {
-            let is_parakeet = model_name == crate::model_download::PARAKEET_MODEL;
+            let is_parakeet = crate::parakeet::is_parakeet(&model_name);
             if is_parakeet {
                 // One model at a time, unless Audio Lab is using the other and there's room for both.
                 if !crate::lab::keep_both_models(&model_name) {
                     transcriber_cl.lock().unwrap().unload();
                 }
-                if let Ok(dir) = crate::parakeet::ParakeetTranscriber::ensure_model(&app_handle_cl).await {
+                if let Ok(dir) = crate::parakeet::ParakeetTranscriber::ensure_model(&app_handle_cl, &model_name).await {
                     {
                         let mut pk = parakeet_cl.lock().unwrap();
                         let _ = pk.prewarm(&dir);
                     }
                     crate::tray::update_tray_model_status(&app_handle_cl, true);
                     // On Apple Silicon, fetch the Neural Engine build once, then switch to it.
-                    if crate::parakeet::ParakeetTranscriber::download_neural_engine_model(&app_handle_cl).await {
-                        let dir = crate::parakeet::ParakeetTranscriber::get_model_dir();
+                    if crate::parakeet::ParakeetTranscriber::download_neural_engine_model(&app_handle_cl, &model_name).await {
+                        let dir = crate::parakeet::ParakeetTranscriber::get_model_dir(&model_name);
                         let mut pk = parakeet_cl.lock().unwrap();
                         let _ = pk.prewarm(&dir);
                     }
@@ -2142,7 +2142,7 @@ impl AppController {
                 return;
             }
 
-            let is_parakeet = settings.model_name == crate::model_download::PARAKEET_MODEL;
+            let is_parakeet = crate::parakeet::is_parakeet(&settings.model_name);
 
             // Pieces transcribed while recording (see live_chunks): only the audio after the last
             // cut goes to the model now.
@@ -2165,7 +2165,7 @@ impl AppController {
             // Step 1: Silero VAD silence trimming with 400ms padding. Skipped for Parakeet on the
             // Neural Engine: it takes the whole recording (see transcribe_on_neural_engine), and VAD
             // took 1.4 s on 3 minutes to trim nothing.
-            let vad_res = if is_parakeet && crate::parakeet::ParakeetTranscriber::runs_on_neural_engine() {
+            let vad_res = if is_parakeet && crate::parakeet::ParakeetTranscriber::runs_on_neural_engine(&settings.model_name) {
                 log_stage_event(&data_dir, "VAD", "VAD skipped: Parakeet on the Neural Engine takes the whole recording");
                 crate::vad::untrimmed(model_samples, 16000)
             } else {

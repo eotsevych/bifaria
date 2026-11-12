@@ -345,8 +345,8 @@ async fn download_specific_model(
     app_handle: AppHandle,
     model_name: String,
 ) -> Result<String, String> {
-    if model_name == crate::model_download::PARAKEET_MODEL {
-        let path = parakeet::ParakeetTranscriber::ensure_model(&app_handle).await?;
+    if crate::parakeet::is_parakeet(&model_name) {
+        let path = parakeet::ParakeetTranscriber::ensure_model(&app_handle, &model_name).await?;
         Ok(path.to_string_lossy().to_string())
     } else {
         let path = transcribe::Transcriber::ensure_model(&app_handle, &model_name).await?;

@@ -26,8 +26,8 @@ pub async fn lock() -> tokio::sync::MutexGuard<'static, ()> {
 }
 
 pub fn is_model_present(model_name: &str) -> bool {
-    if model_name == PARAKEET_MODEL {
-        crate::parakeet::ParakeetTranscriber::model_ready()
+    if crate::parakeet::is_parakeet(model_name) {
+        crate::parakeet::ParakeetTranscriber::model_ready(model_name)
     } else {
         crate::transcribe::Transcriber::model_exists(model_name)
     }
@@ -35,8 +35,8 @@ pub fn is_model_present(model_name: &str) -> bool {
 
 /// Downloads the model if it's missing and returns its path.
 pub async fn ensure(app: &AppHandle, model_name: &str) -> Result<std::path::PathBuf, String> {
-    if model_name == PARAKEET_MODEL {
-        crate::parakeet::ParakeetTranscriber::ensure_model(app).await
+    if crate::parakeet::is_parakeet(model_name) {
+        crate::parakeet::ParakeetTranscriber::ensure_model(app, model_name).await
     } else {
         crate::transcribe::Transcriber::ensure_model(app, model_name).await
     }

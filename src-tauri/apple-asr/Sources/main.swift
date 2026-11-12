@@ -1,13 +1,15 @@
-// bifaria-asr: transcribes speech with Parakeet TDT 0.6B v3 on the Neural Engine (Core ML, through
-// FluidAudio) for Bifaria. Bifaria keeps one worker running so the model stays loaded.
+// bifaria-asr: transcribes speech with Parakeet TDT 0.6B v3 or one of its re-trained siblings (Ultra,
+// Redux, Phonon-2) on the Neural Engine (Core ML, through FluidAudio) for Bifaria. Bifaria keeps one
+// worker running so the model stays loaded.
 //
 // Worker mode (no arguments): one JSON request per line on stdin, one JSON answer per line on
 // stdout, in order.
-//   {"op":"load","dir":"/path/to/parakeet-tdt-0.6b-v3-coreml"} → {"ok":true,"ms":…}
+//   {"op":"load","dir":"/path/to/parakeet-tdt-0.6b-v3-coreml","version":"v3"} → {"ok":true,"ms":…}
+//     "version" is "v3" (the default), "ultra", "redux" or "phonon2".
 //   {"op":"transcribe","audio":"<base64 of 16 kHz mono float32 little-endian>"} → {"ok":true,"text":…,"ms":…}
 // Failures are {"ok":false,"error":"not_loaded|bad_request|internal","message":…}.
 //
-// One-shot test: `bifaria-asr <model-dir> <16 kHz mono wav>` prints the text and timings.
+// One-shot test: `bifaria-asr <model-dir> <16 kHz mono wav> [version]` prints the text and timings.
 
 import AVFoundation
 import FluidAudio
@@ -37,12 +39,25 @@ func floats(_ data: Data) -> [Float] {
     return out
 }
 
+/// FluidAudio's model version for a "version" name; nil for an unknown one.
+func modelVersion(_ name: String?) -> AsrModelVersion? {
+    switch name ?? "v3" {
+    case "v3": return .v3
+    case "ultra": return .ultra
+    case "redux": return .redux
+    case "phonon2": return .phonon2
+    default: return nil
+    }
+}
+
 actor Engine {
     private var asr: AsrManager?
 
-    func load(dir: String) async throws -> Int {
+    func load(dir: String, version: AsrModelVersion) async throws -> Int {
         let start = Date()
-        let models = try AsrModels.loadLocal(from: URL(fileURLWithPath: dir), version: .v3)
+        // A new model replaces the loaded one rather than sitting next to it.
+        asr = nil
+        let models = try AsrModels.loadLocal(from: URL(fileURLWithPath: dir), version: version)
         let asr = AsrManager(config: .default, models: models)
         // The first prediction compiles the model for the Neural Engine; do it now, not on the user's first dictation.
         var state = TdtDecoderState.make()
@@ -81,8 +96,12 @@ func readWav16k(_ path: String) throws -> [Float] {
 let engine = Engine()
 let args = CommandLine.arguments
 
-if args.count == 3 {
-    let loadMs = try await engine.load(dir: args[1])
+if args.count == 3 || args.count == 4 {
+    guard let version = modelVersion(args.count == 4 ? args[3] : nil) else {
+        print("unknown version \(args[3]); use v3, ultra, redux or phonon2")
+        exit(2)
+    }
+    let loadMs = try await engine.load(dir: args[1], version: version)
     let samples = try readWav16k(args[2])
     for run in 1...3 {
         let start = Date()
@@ -106,7 +125,11 @@ while let line = readLine() {
                 emit(failure("bad_request", "\"load\" needs \"dir\""))
                 continue
             }
-            emit(["ok": true, "ms": try await engine.load(dir: dir)])
+            guard let version = modelVersion(request["version"] as? String) else {
+                emit(failure("bad_request", "Unknown \"version\"; use v3, ultra, redux or phonon2"))
+                continue
+            }
+            emit(["ok": true, "ms": try await engine.load(dir: dir, version: version)])
         case "transcribe":
             guard let audio = (request["audio"] as? String).flatMap({ Data(base64Encoded: $0) }) else {
                 emit(failure("bad_request", "\"transcribe\" needs base64 \"audio\""))
