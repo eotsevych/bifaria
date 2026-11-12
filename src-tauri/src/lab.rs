@@ -616,7 +616,7 @@ pub async fn run_experiment(
             vad_time_ms,
             inference_time_ms: inference_ms,
             speed_factor,
-            hardware_engine: "ONNX Runtime (CPU FastConformer)".to_string(),
+            hardware_engine: crate::parakeet::ParakeetTranscriber::device_label(&req.model_name),
             original_audio_filename: req.audio_filename.clone(),
             vad_audio_filename,
             post_applied,
@@ -694,8 +694,8 @@ pub async fn run_experiment(
             0.0
         };
 
-        let hardware_engine = match crate::transcribe::gpu_devices().first() {
-            Some(gpu) if crate::settings::AppSettings::load().device_backend != "cpu" => format!("GPU: {}", gpu),
+        let hardware_engine = match crate::transcribe::devices().first() {
+            Some(("auto", gpu)) if crate::settings::AppSettings::load().device_backend != "cpu" => gpu.clone(),
             _ => "CPU".to_string(),
         };
 

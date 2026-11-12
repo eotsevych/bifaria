@@ -994,6 +994,7 @@ impl AppController {
     pub fn new(app_handle: AppHandle) -> Result<Self, String> {
         let settings = AppSettings::load();
         crate::transcribe::set_device_backend(&settings.device_backend);
+        crate::parakeet::set_device(&settings.parakeet_device);
         crate::pipeline_logger::set_private(crate::settings::is_private(&settings.storage_mode));
         let history = Arc::new(HistoryManager::new()?);
 
@@ -1160,11 +1161,12 @@ impl AppController {
 
     /// Saves settings the Settings window sent; it already shows them.
     pub fn save_settings_from_window(&self, new_settings: AppSettings) -> Result<(), String> {
-        let (old_model, devices_changed) = {
+        let (old_model, devices_changed, parakeet_moved) = {
             let s = self.settings.lock().unwrap();
             (
                 s.model_name.clone(),
                 s.input_device != new_settings.input_device || s.output_device != new_settings.output_device,
+                s.parakeet_device != new_settings.parakeet_device,
             )
         };
         new_settings.save()?;
@@ -1174,6 +1176,13 @@ impl AppController {
         }
         // A loaded Whisper model is moved to or off the GPU when it is next used.
         crate::transcribe::set_device_backend(&new_settings.device_backend);
+        crate::parakeet::set_device(&new_settings.parakeet_device);
+        if parakeet_moved {
+            // Core ML picks the device when the model loads; the next dictation loads it there.
+            // Off the UI thread: a dictation or Audio Lab run may hold the model for minutes.
+            let pk = self.parakeet_transcriber.clone();
+            std::thread::spawn(move || pk.lock().unwrap().unload());
+        }
         crate::pipeline_logger::set_private(crate::settings::is_private(&new_settings.storage_mode));
         crate::tray::sync_translation_menu(&new_settings);
         if devices_changed {

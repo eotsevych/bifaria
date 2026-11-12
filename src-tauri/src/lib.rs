@@ -504,16 +504,38 @@ fn get_hardware_profile() -> cpu_features::HardwareProfile {
     cpu_features::detect_hardware_profile()
 }
 
-/// The GPUs Whisper can run on, for Settings → Hardware acceleration.
-#[tauri::command]
-async fn get_gpu_devices() -> Vec<String> {
-    transcribe::gpu_devices()
+#[derive(serde::Serialize)]
+struct DeviceOption {
+    value: &'static str,
+    label: String,
 }
 
-/// Where Parakeet runs (Neural Engine or CPU), for Settings → Hardware acceleration.
+/// Where a model can run on this computer, for Settings → Runs on, next to the model picker.
+#[derive(serde::Serialize)]
+struct ModelDevices {
+    /// The setting the choice is saved in: each model family keeps its own.
+    setting: &'static str,
+    options: Vec<DeviceOption>,
+    hint: String,
+}
+
 #[tauri::command]
-fn get_parakeet_engine() -> String {
-    parakeet::ParakeetTranscriber::engine_label()
+async fn get_model_devices(model_name: String) -> ModelDevices {
+    let parakeet = parakeet::is_parakeet(&model_name);
+    let options = if parakeet { parakeet::devices(&model_name) } else { transcribe::devices() };
+    let hint = match (parakeet, options.len()) {
+        (true, 1) => "Parakeet runs on the CPU on this computer".to_string(),
+        (true, _) => "Parakeet runs through Core ML. The Neural Engine is the fastest and easiest on the battery; \
+            GPU and CPU are there to compare. The first load on a new device takes longer"
+            .to_string(),
+        (false, 1) => "No GPU found, Whisper runs on the CPU".to_string(),
+        (false, _) => "Whisper is fastest on the GPU; pick CPU if the GPU misbehaves".to_string(),
+    };
+    ModelDevices {
+        setting: if parakeet { "parakeet_device" } else { "device_backend" },
+        options: options.into_iter().map(|(value, label)| DeviceOption { value, label }).collect(),
+        hint,
+    }
 }
 
 /// Runs a command from a second `bifaria` process (see cli.rs) in this one.
@@ -686,8 +708,7 @@ pub fn run() {
             lab_save_result,
             save_lab_custom_audio,
             get_hardware_profile,
-            get_gpu_devices,
-            get_parakeet_engine,
+            get_model_devices,
             start_mic_test,
             stop_mic_test,
             play_test_sound,

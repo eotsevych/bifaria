@@ -143,6 +143,44 @@ const PHONON2_ANE: ModelFiles = ModelFiles {
 /// The helper that runs the Neural Engine build, bundled next to the Bifaria executable.
 const ANE_HELPER: &str = "bifaria-asr";
 
+/// Where the helper runs the Core ML build (Settings → Runs on): "ane", "gpu" or "cpu".
+static DEVICE: std::sync::Mutex<&'static str> = std::sync::Mutex::new("ane");
+
+/// Sets where the next Core ML load runs; the caller unloads a model loaded elsewhere.
+pub fn set_device(device: &str) {
+    *DEVICE.lock().unwrap() = match device {
+        "gpu" => "gpu",
+        "cpu" => "cpu",
+        _ => "ane",
+    };
+}
+
+fn device() -> &'static str {
+    *DEVICE.lock().unwrap()
+}
+
+fn device_name(device: &str) -> &'static str {
+    match device {
+        "gpu" => "the GPU",
+        "cpu" => "the CPU",
+        _ => "the Neural Engine",
+    }
+}
+
+/// Where `model_name` can run here, as (Settings value, label): Neural Engine, GPU and CPU through
+/// Core ML where the helper runs, otherwise the CPU build.
+pub fn devices(model_name: &str) -> Vec<(&'static str, String)> {
+    if variant(model_name).on_neural_engine_here() {
+        vec![
+            ("ane", "Neural Engine (recommended)".to_string()),
+            ("gpu", "GPU".to_string()),
+            ("cpu", "CPU".to_string()),
+        ]
+    } else {
+        vec![("cpu", format!("CPU ({} threads)", crate::cpu_features::parakeet_threads()))]
+    }
+}
+
 /// A Parakeet model Bifaria offers. v3 has a CPU (ONNX) and a Neural Engine build; its re-trained
 /// siblings ship only for Core ML, so they're offered where the Neural Engine helper runs.
 pub struct Variant {
@@ -272,9 +310,9 @@ struct AneHelper {
 }
 
 impl AneHelper {
-    /// Starts the helper and loads the model from `dir` as FluidAudio's `version` (compiled for the
-    /// Neural Engine on the first load, which can take tens of seconds; Core ML caches it after that).
-    fn start(path: &Path, dir: &Path, version: &str) -> Result<Self, String> {
+    /// Starts the helper and loads the model from `dir` as FluidAudio's `version` onto `units`
+    /// (compiled for that device on the first load, which can take tens of seconds; Core ML caches it).
+    fn start(path: &Path, dir: &Path, version: &str, units: &str) -> Result<Self, String> {
         let mut child = Command::new(path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -284,7 +322,7 @@ impl AneHelper {
         let stdin = child.stdin.take().ok_or("the helper has no stdin")?;
         let stdout = BufReader::new(child.stdout.take().ok_or("the helper has no stdout")?);
         let mut helper = Self { child, stdin, stdout };
-        helper.ask(json!({ "op": "load", "dir": dir, "version": version }))?;
+        helper.ask(json!({ "op": "load", "dir": dir, "version": version, "units": units }))?;
         Ok(helper)
     }
 
@@ -381,21 +419,23 @@ impl ParakeetTranscriber {
         variant(model_name).current().ready()
     }
 
-    /// True when `model_name` runs on the Neural Engine build (it may still be downloading).
+    /// True when `model_name` runs on the Core ML build (it may still be downloading), on whichever
+    /// device Settings picks; FluidAudio then takes whole recordings.
     pub fn runs_on_neural_engine(model_name: &str) -> bool {
         let v = variant(model_name);
         v.ane.is_some_and(|ane| std::ptr::eq(v.current(), ane))
     }
 
-    /// Where Parakeet runs on this computer, for Settings: "the Neural Engine", or the CPU and why.
-    pub fn engine_label() -> String {
-        if ane_helper().is_none() {
-            return format!("the CPU ({} threads)", crate::cpu_features::parakeet_threads());
+    /// Where `model_name` runs now, e.g. "the Neural Engine", or the CPU and why.
+    pub fn device_label(model_name: &str) -> String {
+        if Self::runs_on_neural_engine(model_name) {
+            return device_name(device()).to_string();
         }
-        if NEURAL_ENGINE.ready() || !ONNX.ready() {
-            "the Neural Engine".to_string()
+        let cpu = format!("the CPU ({} threads)", crate::cpu_features::parakeet_threads());
+        if variant(model_name).on_neural_engine_here() {
+            format!("{cpu} until its Core ML model finishes downloading")
         } else {
-            "the CPU until its Neural Engine model finishes downloading".to_string()
+            cpu
         }
     }
 
@@ -544,13 +584,14 @@ impl ParakeetTranscriber {
             // One model at a time: the CPU session goes before the helper loads.
             self.model = None;
             self.ane = None;
-            self.ane = Some(AneHelper::start(&helper, model_dir, v.ane_version)?);
+            let units = device();
+            self.ane = Some(AneHelper::start(&helper, model_dir, v.ane_version, units)?);
             self.current_dir = dir_str.to_string();
             self.threads = 0;
             crate::pipeline_logger::log_stage_event(
                 &get_data_dir(),
                 "MODEL_LOAD",
-                &format!("Loaded {} on the Neural Engine in {} ms (in {ANE_HELPER})", v.title, started.elapsed().as_millis()),
+                &format!("Loaded {} on {} in {} ms (in {ANE_HELPER})", v.title, device_name(units), started.elapsed().as_millis()),
             );
             return Ok(());
         }
@@ -718,13 +759,14 @@ mod tests {
         let fake = dir.join("bifaria-asr");
         fs::write(
             &fake,
-            "#!/bin/sh\nwhile read -r line; do case \"$line\" in\n*'\"op\":\"load\"'*'\"version\":\"ultra\"'*) echo '{\"ok\":true,\"ms\":1}';;\n*'\"transcribe\"'*) echo '{\"ok\":true,\"text\":\" hi \",\"ms\":1}';;\n*) echo '{\"ok\":false,\"error\":\"bad_request\",\"message\":\"no\"}';;\nesac; done\n",
+            "#!/bin/sh\nwhile read -r line; do case \"$line\" in\n*'\"op\":\"load\"'*) if echo \"$line\" | grep -q '\"version\":\"ultra\"' && echo \"$line\" | grep -q '\"units\":\"gpu\"'; then echo '{\"ok\":true,\"ms\":1}'; else echo '{\"ok\":false,\"error\":\"bad_request\",\"message\":\"load\"}'; fi;;\n*'\"transcribe\"'*) echo '{\"ok\":true,\"text\":\" hi \",\"ms\":1}';;\n*) echo '{\"ok\":false,\"error\":\"bad_request\",\"message\":\"no\"}';;\nesac; done\n",
         )
         .unwrap();
         fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
 
-        // The stand-in accepts only a load that names the model version.
-        let mut helper = AneHelper::start(&fake, &dir, "ultra").unwrap();
+        // The stand-in accepts only a load that names the model version and the device.
+        assert_eq!(AneHelper::start(&fake, &dir, "ultra", "ane").err().as_deref(), Some("load"));
+        let mut helper = AneHelper::start(&fake, &dir, "ultra", "gpu").unwrap();
         assert_eq!(helper.transcribe(&[0.1, -0.2]).unwrap(), "hi");
         assert_eq!(helper.ask(json!({ "op": "other" })).unwrap_err(), "no");
         drop(helper);

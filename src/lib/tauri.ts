@@ -57,7 +57,10 @@ export interface BackendSettings {
   apple_fallback_provider?: string;
   /** Apple Translation model to use when both are downloaded: "fast" or "quality". */
   apple_translation_model?: "fast" | "quality";
+  /** Where Whisper runs: "auto" (the GPU when there is one) or "cpu". */
   device_backend?: string;
+  /** Where Parakeet runs on a Mac: "ane" (Neural Engine), "gpu" or "cpu". */
+  parakeet_device?: string;
   audio_chunking?: boolean;
   noise_reduction?: NoiseReduction;
   mask_confidential?: boolean;
@@ -94,16 +97,35 @@ export interface HardwareProfile {
   summary: string;
 }
 
-/** The GPUs Whisper can run on (Metal on a Mac, Vulkan on Windows and Linux); empty without one. */
-export async function fetchGpuDevices(): Promise<string[]> {
-  if (!isTauri()) return ["Apple M2"];
-  return await invoke<string[]>("get_gpu_devices");
+/** Where a model can run on this computer; the choice is saved in `setting` (one per model family). */
+export interface ModelDevices {
+  setting: "device_backend" | "parakeet_device";
+  options: { value: string; label: string }[];
+  hint: string;
 }
 
-/** Where Parakeet runs, e.g. "the Neural Engine" or "the CPU (6 threads)". */
-export async function fetchParakeetEngine(): Promise<string> {
-  if (!isTauri()) return "the Neural Engine";
-  return await invoke<string>("get_parakeet_engine");
+export async function fetchModelDevices(modelName: string): Promise<ModelDevices> {
+  if (!isTauri()) {
+    return modelName.startsWith("ggml")
+      ? {
+          setting: "device_backend",
+          options: [
+            { value: "auto", label: "GPU (Apple M2)" },
+            { value: "cpu", label: "CPU" },
+          ],
+          hint: "Whisper is fastest on the GPU",
+        }
+      : {
+          setting: "parakeet_device",
+          options: [
+            { value: "ane", label: "Neural Engine (recommended)" },
+            { value: "gpu", label: "GPU" },
+            { value: "cpu", label: "CPU" },
+          ],
+          hint: "Parakeet runs through Core ML",
+        };
+  }
+  return await invoke<ModelDevices>("get_model_devices", { modelName });
 }
 
 export async function fetchHardwareProfile(): Promise<HardwareProfile | null> {

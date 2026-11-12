@@ -276,6 +276,12 @@ fn gpu_wanted() -> bool {
     USE_GPU.load(Ordering::Relaxed) && !cfg!(all(target_os = "macos", target_arch = "x86_64"))
 }
 
+/// Where Whisper can run here, as (Settings value, label): the first GPU, then the CPU.
+pub fn devices() -> Vec<(&'static str, String)> {
+    let gpu = gpu_devices().into_iter().next().filter(|_| !cfg!(all(target_os = "macos", target_arch = "x86_64")));
+    gpu.map(|g| ("auto", format!("GPU ({g})"))).into_iter().chain([("cpu", "CPU".to_string())]).collect()
+}
+
 /// The GPUs Whisper can run on: Metal on a Mac, Vulkan on Windows and Linux. Empty without one.
 pub fn gpu_devices() -> Vec<String> {
     use whisper_rs_sys as sys;

@@ -54,6 +54,7 @@ const defaultSettings: BackendSettings = {
   normalize_structured_values: true,
   translation_provider: "Offline",
   device_backend: "auto",
+  parakeet_device: "ane",
   audio_chunking: false,
   noise_reduction: "off",
   mask_confidential: false,

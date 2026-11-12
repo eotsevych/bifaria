@@ -4,14 +4,16 @@
 //
 // Worker mode (no arguments): one JSON request per line on stdin, one JSON answer per line on
 // stdout, in order.
-//   {"op":"load","dir":"/path/to/parakeet-tdt-0.6b-v3-coreml","version":"v3"} → {"ok":true,"ms":…}
-//     "version" is "v3" (the default), "ultra", "redux" or "phonon2".
+//   {"op":"load","dir":"/path/to/parakeet-tdt-0.6b-v3-coreml","version":"v3","units":"ane"} → {"ok":true,"ms":…}
+//     "version" is "v3" (the default), "ultra", "redux" or "phonon2"; "units" is where Core ML runs
+//     it: "ane" (Neural Engine, the default), "gpu" or "cpu".
 //   {"op":"transcribe","audio":"<base64 of 16 kHz mono float32 little-endian>"} → {"ok":true,"text":…,"ms":…}
 // Failures are {"ok":false,"error":"not_loaded|bad_request|internal","message":…}.
 //
-// One-shot test: `bifaria-asr <model-dir> <16 kHz mono wav> [version]` prints the text and timings.
+// One-shot test: `bifaria-asr <model-dir> <16 kHz mono wav> [version [units]]` prints the text and timings.
 
 import AVFoundation
+import CoreML
 import FluidAudio
 import Foundation
 
@@ -50,16 +52,28 @@ func modelVersion(_ name: String?) -> AsrModelVersion? {
     }
 }
 
+/// Core ML compute units for a "units" name; nil for an unknown one.
+func computeUnits(_ name: String?) -> MLComputeUnits? {
+    switch name ?? "ane" {
+    case "ane": return .cpuAndNeuralEngine
+    case "gpu": return .cpuAndGPU
+    case "cpu": return .cpuOnly
+    default: return nil
+    }
+}
+
 actor Engine {
     private var asr: AsrManager?
 
-    func load(dir: String, version: AsrModelVersion) async throws -> Int {
+    func load(dir: String, version: AsrModelVersion, units: MLComputeUnits) async throws -> Int {
         let start = Date()
         // A new model replaces the loaded one rather than sitting next to it.
         asr = nil
-        let models = try AsrModels.loadLocal(from: URL(fileURLWithPath: dir), version: version)
+        let models = try AsrModels.loadLocal(
+            from: URL(fileURLWithPath: dir), version: version,
+            configuration: MLModelConfigurationUtils.defaultConfiguration(computeUnits: units))
         let asr = AsrManager(config: .default, models: models)
-        // The first prediction compiles the model for the Neural Engine; do it now, not on the user's first dictation.
+        // The first prediction compiles the model for its device; do it now, not on the user's first dictation.
         var state = TdtDecoderState.make()
         _ = try? await asr.transcribe([Float](repeating: 0, count: 16000), decoderState: &state)
         self.asr = asr
@@ -96,12 +110,14 @@ func readWav16k(_ path: String) throws -> [Float] {
 let engine = Engine()
 let args = CommandLine.arguments
 
-if args.count == 3 || args.count == 4 {
-    guard let version = modelVersion(args.count == 4 ? args[3] : nil) else {
-        print("unknown version \(args[3]); use v3, ultra, redux or phonon2")
+if (3...5).contains(args.count) {
+    guard let version = modelVersion(args.count >= 4 ? args[3] : nil),
+        let units = computeUnits(args.count == 5 ? args[4] : nil)
+    else {
+        print("use: bifaria-asr <model-dir> <wav> [v3|ultra|redux|phonon2 [ane|gpu|cpu]]")
         exit(2)
     }
-    let loadMs = try await engine.load(dir: args[1], version: version)
+    let loadMs = try await engine.load(dir: args[1], version: version, units: units)
     let samples = try readWav16k(args[2])
     for run in 1...3 {
         let start = Date()
@@ -129,7 +145,11 @@ while let line = readLine() {
                 emit(failure("bad_request", "Unknown \"version\"; use v3, ultra, redux or phonon2"))
                 continue
             }
-            emit(["ok": true, "ms": try await engine.load(dir: dir, version: version)])
+            guard let units = computeUnits(request["units"] as? String) else {
+                emit(failure("bad_request", "Unknown \"units\"; use ane, gpu or cpu"))
+                continue
+            }
+            emit(["ok": true, "ms": try await engine.load(dir: dir, version: version, units: units)])
         case "transcribe":
             guard let audio = (request["audio"] as? String).flatMap({ Data(base64Encoded: $0) }) else {
                 emit(failure("bad_request", "\"transcribe\" needs base64 \"audio\""))

@@ -11,10 +11,8 @@ import {
   pickAndImportModel,
   downloadCustomModel,
   getModelsDirPath,
-  fetchHardwareProfile,
-  fetchGpuDevices,
-  fetchParakeetEngine,
-  type HardwareProfile,
+  fetchModelDevices,
+  type ModelDevices,
 } from "@/lib/tauri";
 
 const IDLE_OPTIONS = [
@@ -78,24 +76,28 @@ export default function TranscriptionTab({ t }: { t: Tokens }) {
   const [isImporting, setIsImporting] = useState(false);
   const [isDownloadingCustom, setIsDownloadingCustom] = useState(false);
   const [importFeedback, setImportFeedback] = useState<string | null>(null);
-  const [hwProfile, setHwProfile] = useState<HardwareProfile | null>(null);
-  const [gpus, setGpus] = useState<string[] | null>(null);
-  const [parakeetEngine, setParakeetEngine] = useState("the CPU");
+  const [devices, setDevices] = useState<ModelDevices | null>(null);
 
   useEffect(() => {
-    fetchParakeetEngine()
-      .then(setParakeetEngine)
-      .catch(() => {});
     getModelsDirPath()
       .then(setModelsFolderPath)
       .catch(() => {});
-    fetchHardwareProfile()
-      .then(setHwProfile)
-      .catch(() => {});
-    fetchGpuDevices()
-      .then(setGpus)
-      .catch(() => setGpus([]));
   }, []);
+
+  // Where the picked model can run: each model family offers its own devices.
+  useEffect(() => {
+    let current = true;
+    fetchModelDevices(settings.model_name)
+      .then((d) => current && setDevices(d))
+      .catch(() => current && setDevices(null));
+    return () => {
+      current = false;
+    };
+  }, [settings.model_name]);
+  const deviceValue = devices
+    ? (devices.options.find((o) => o.value === settings[devices.setting]) ?? devices.options[0])
+        ?.value
+    : undefined;
 
   const modelOptions =
     models.length > 0
@@ -155,6 +157,21 @@ export default function TranscriptionTab({ t }: { t: Tokens }) {
             )}
           </div>
         </Row>
+
+        {devices && deviceValue && (
+          <Row label="Runs on" hint={devices.hint} t={t} last={false}>
+            {devices.options.length > 1 ? (
+              <FieldSelect
+                value={deviceValue}
+                onChange={(v) => updateSettings({ [devices.setting]: v })}
+                options={devices.options}
+                t={t}
+              />
+            ) : (
+              <span style={{ fontSize: 12, color: t.textMuted }}>{devices.options[0]?.label}</span>
+            )}
+          </Row>
+        )}
 
         <Row
           label="Spoken language"
@@ -295,38 +312,7 @@ export default function TranscriptionTab({ t }: { t: Tokens }) {
 
       {/* ── Advanced: hardware, memory and your own model files ── */}
       <Section title="Advanced" t={t}>
-        <Disclosure label="Hardware, memory and custom models" t={t} last>
-          <Row
-            label="Hardware acceleration"
-            hint={
-              !hwProfile || !gpus
-                ? "Detecting computer hardware…"
-                : `${hwProfile.os.toUpperCase()} ${hwProfile.arch} (${hwProfile.logical_cores} cores) · ${
-                    gpus.length > 0
-                      ? `GPU: ${gpus.join(", ")}`
-                      : "No GPU found, Whisper runs on the CPU"
-                  }. Whisper models use the GPU (this setting); Parakeet runs on ${parakeetEngine}`
-            }
-            t={t}
-            last={false}
-          >
-            <FieldSelect
-              value={settings.device_backend === "cpu" ? "cpu" : "auto"}
-              onChange={(v) => updateSettings({ device_backend: v })}
-              options={[
-                {
-                  value: "auto",
-                  label:
-                    gpus && gpus.length > 0
-                      ? `GPU when available (${gpus[0]})`
-                      : "GPU when available",
-                },
-                { value: "cpu", label: "CPU only" },
-              ]}
-              t={t}
-            />
-          </Row>
-
+        <Disclosure label="Memory and custom models" t={t} last>
           <Row label="Idle timeout" hint={idleTimeoutHint(idleSec)} t={t}>
             <Segmented
               options={idleOptionsFor(idleSec)}
