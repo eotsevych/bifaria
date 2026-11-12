@@ -386,6 +386,18 @@ impl ParakeetTranscriber {
         // The crate defaults to 4 threads whatever the machine has.
         let threads = crate::cpu_features::parakeet_threads();
         let config = parakeet_rs::ExecutionConfig::default().with_intra_threads(threads);
+        // Experiment: BIFARIA_PARAKEET_EP=directml runs the model on the GPU through DirectML. If
+        // DirectML can't start, ONNX Runtime quietly uses the CPU, so check the GPU in Task Manager.
+        #[cfg(windows)]
+        let (config, engine) = if std::env::var("BIFARIA_PARAKEET_EP").is_ok_and(|v| v.eq_ignore_ascii_case("directml")) {
+            (config.with_execution_provider(parakeet_rs::ExecutionProvider::DirectML), "DirectML (GPU)")
+        } else {
+            (config, "the CPU")
+        };
+        #[cfg(not(windows))]
+        let engine = "the CPU";
+        // parakeet-rs prefers the full-precision encoder-model.onnx over the int8 one when both are there.
+        let precision = if model_dir.join("encoder-model.onnx").exists() { "fp32" } else { "int8" };
         let parakeet = parakeet_rs::ParakeetTDT::from_pretrained(dir_str, Some(config))
             .map_err(|e| format!("Failed to load Parakeet: {:?}", e))?;
 
@@ -396,8 +408,10 @@ impl ParakeetTranscriber {
             &get_data_dir(),
             "MODEL_LOAD",
             &format!(
-                "Loaded Parakeet TDT in {} ms on {} threads; app memory {} → {} MB",
+                "Loaded Parakeet TDT ({}) in {} ms on {}, {} threads; app memory {} → {} MB",
+                precision,
                 started.elapsed().as_millis(),
+                engine,
                 threads,
                 rss_before,
                 crate::vitals::process_rss_mb()
