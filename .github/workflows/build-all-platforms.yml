@@ -239,6 +239,9 @@ jobs:
 
       - name: Build Windows installers
         run: |
+          # ort-sys copies its DLLs into these and panics when they're missing (newer cargo nests build output deeper).
+          t=$(cygpath -u "$CARGO_TARGET_DIR")
+          mkdir -p "$t"/release/{examples,deps} "$t"/release/build/{examples,deps}
           if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
             bun run tauri build --bundles nsis,msi --config "$UPDATER_CONFIG"
           else
