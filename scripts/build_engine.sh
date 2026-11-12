@@ -88,4 +88,15 @@ if [[ "${ENGINE_OPENVINO:-1}" != 0 ]]; then
     if [[ -d "$ov/runtime/3rdparty/tbb/lib" ]]; then cp -a "$ov"/runtime/3rdparty/tbb/lib/libtbb.so* "$out/"; fi
   fi
 fi
+
+# Tauri copies symlinks as whole files, so keep each Linux library once, under the name the loader
+# asks for (its SONAME, e.g. libopenvino.so.2541), and drop the version links.
+if [[ $exe != *.exe ]]; then
+  for f in "$out"/*.so*; do
+    [[ -L $f ]] && continue
+    so=$(objdump -p "$f" | awk '/SONAME/ {print $2}')
+    if [[ -n $so && $so != "$(basename "$f")" ]]; then mv -f "$f" "$out/$so"; fi
+  done
+  find "$out" -type l -delete
+fi
 ls -la "$out"

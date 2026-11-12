@@ -49,15 +49,26 @@ pub struct Eddy {
 unsafe impl Send for Eddy {}
 
 fn lib_path(stem: &str) -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let dir = exe.parent().ok_or("the helper has no folder")?;
     let name = if cfg!(windows) {
         format!("{stem}.dll")
     } else if cfg!(target_os = "macos") {
         format!("lib{stem}.dylib")
     } else {
-        format!("lib{stem}.so")
+        // Linux ships each library once, under its SONAME (scripts/build_engine.sh): libopenvino_c.so.2541.
+        let plain = format!("lib{stem}.so");
+        std::fs::read_dir(dir)
+            .ok()
+            .and_then(|entries| {
+                entries
+                    .filter_map(|e| e.ok()?.file_name().into_string().ok())
+                    .filter(|n| *n == plain || n.starts_with(&format!("{plain}.")))
+                    .min_by_key(|n| n.len())
+            })
+            .unwrap_or(plain)
     };
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    Ok(exe.parent().ok_or("the helper has no folder")?.join(name))
+    Ok(dir.join(name))
 }
 
 fn open(stem: &str) -> Result<Library, String> {
