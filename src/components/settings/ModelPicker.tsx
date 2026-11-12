@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Tokens } from "@/lib/tokens";
 import type { ModelCatalogItem } from "@/lib/tauri";
 
@@ -98,10 +99,58 @@ export default function ModelPicker({
   const [showAll, setShowAll] = useState(false);
   const [active, setActive] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState<{
+    left: number;
+    width: number;
+    top?: number;
+    bottom?: number;
+    maxHeight: number;
+  } | null>(null);
 
   const selected = models.find((m) => m.filename === value);
+  // A label every model has (e.g. "GPU") tells nothing apart: rows leave it out.
+  const commonTags = useMemo(
+    () =>
+      models.length > 1
+        ? (models[0]?.tags ?? []).filter((tag) => models.every((m) => m.tags.includes(tag)))
+        : [],
+    [models],
+  );
+
+  // The list floats over the window, below the button or above it, whichever has more room, so
+  // the settings card around the button can't cut it off.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const placeIt = () => {
+      const r = rootRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const margin = 12;
+      const width = Math.min(460, window.innerWidth - 2 * margin);
+      const left = Math.max(margin, Math.min(r.right - width, window.innerWidth - width - margin));
+      const below = window.innerHeight - r.bottom - margin - 6;
+      const above = r.top - margin - 6;
+      setPlace(
+        below >= 360 || below >= above
+          ? { left, width, top: r.bottom + 6, maxHeight: Math.min(520, below) }
+          : {
+              left,
+              width,
+              bottom: window.innerHeight - r.top + 6,
+              maxHeight: Math.min(520, above),
+            },
+      );
+    };
+    placeIt();
+    window.addEventListener("resize", placeIt);
+    window.addEventListener("scroll", placeIt, true);
+    return () => {
+      window.removeEventListener("resize", placeIt);
+      window.removeEventListener("scroll", placeIt, true);
+    };
+  }, [open]);
 
   // Recommended, downloaded and the selected model show by default; a search covers every model.
   const visible = useMemo(() => {
@@ -123,7 +172,8 @@ export default function ModelPicker({
     );
     searchRef.current?.focus();
     const close = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (!rootRef.current?.contains(target) && !popRef.current?.contains(target)) setOpen(false);
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
@@ -212,159 +262,172 @@ export default function ModelPicker({
         </span>
       </button>
 
-      {open && (
-        <div
-          onKeyDown={onKeyDown}
-          style={{
-            position: "absolute",
-            top: "calc(100% + 6px)",
-            right: 0,
-            width: 440,
-            maxWidth: "80vw",
-            zIndex: 50,
-            background: t.modalBg,
-            border: `1px solid ${t.modalBorder}`,
-            borderRadius: 10,
-            boxShadow: t.shadow,
-            overflow: "hidden",
-          }}
-        >
-          <div style={{ padding: 8, borderBottom: `1px solid ${t.border}` }}>
-            <input
-              ref={searchRef}
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setActive(0);
-              }}
-              placeholder="Search models, languages, GPU…"
-              aria-label="Search models"
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                background: t.inputBg,
-                border: `1px solid ${t.inputBorder}`,
-                borderRadius: 6,
-                padding: "6px 10px",
-                color: t.inputText,
-                fontSize: 12,
-                outline: "none",
-              }}
-            />
-          </div>
+      {open &&
+        place &&
+        createPortal(
           <div
-            ref={listRef}
-            role="listbox"
-            aria-label="Speech models"
-            style={{ maxHeight: 360, overflowY: "auto", padding: 4 }}
+            ref={popRef}
+            onKeyDown={onKeyDown}
+            style={{
+              position: "fixed",
+              left: place.left,
+              width: place.width,
+              top: place.top,
+              bottom: place.bottom,
+              maxHeight: place.maxHeight,
+              zIndex: 1000,
+              display: "flex",
+              flexDirection: "column",
+              // A step lighter than the window, so it reads as a layer above it.
+              backgroundColor: t.modalBg,
+              backgroundImage: `linear-gradient(${t.surfaceActive}, ${t.surfaceActive})`,
+              border: `1px solid ${t.inputBorder}`,
+              borderRadius: 12,
+              boxShadow: "0 18px 48px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25)",
+              overflow: "hidden",
+              fontFamily: "Inter, -apple-system, sans-serif",
+            }}
           >
-            {visible.length === 0 && (
-              <div style={{ padding: 16, fontSize: 12, color: t.textDim, textAlign: "center" }}>
-                No model matches “{query}”
-              </div>
-            )}
-            {visible.map((m, i) => {
-              const header = m.family !== lastFamily;
-              lastFamily = m.family;
-              const isSelected = m.filename === value;
-              const languages = languagesLabel(m.languages);
-              return (
-                <div key={m.filename}>
-                  {header && (
+            <div style={{ padding: 8, borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setActive(0);
+                }}
+                placeholder="Search models, languages, GPU…"
+                aria-label="Search models"
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  background: t.inputBg,
+                  border: `1px solid ${t.inputBorder}`,
+                  borderRadius: 6,
+                  padding: "6px 10px",
+                  color: t.inputText,
+                  fontSize: 12,
+                  outline: "none",
+                }}
+              />
+            </div>
+            <div
+              ref={listRef}
+              role="listbox"
+              aria-label="Speech models"
+              style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 4 }}
+            >
+              {visible.length === 0 && (
+                <div style={{ padding: 16, fontSize: 12, color: t.textDim, textAlign: "center" }}>
+                  No model matches “{query}”
+                </div>
+              )}
+              {visible.map((m, i) => {
+                const header = m.family !== lastFamily;
+                lastFamily = m.family;
+                const isSelected = m.filename === value;
+                const languages = languagesLabel(m.languages);
+                return (
+                  <div key={m.filename}>
+                    {header && (
+                      <div
+                        style={{
+                          padding: "8px 8px 4px",
+                          fontSize: 10,
+                          fontWeight: 600,
+                          letterSpacing: 0.4,
+                          textTransform: "uppercase",
+                          color: t.textDim,
+                        }}
+                      >
+                        {familyName(m.family)}
+                      </div>
+                    )}
                     <div
+                      role="option"
+                      aria-selected={isSelected}
+                      data-index={i}
+                      onMouseEnter={() => setActive(i)}
+                      onClick={() => choose(m)}
+                      title={
+                        m.languages.length > 2
+                          ? m.languages.map(languageName).join(", ")
+                          : undefined
+                      }
                       style={{
-                        padding: "8px 8px 4px",
-                        fontSize: 10,
-                        fontWeight: 600,
-                        letterSpacing: 0.4,
-                        textTransform: "uppercase",
-                        color: t.textDim,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "7px 8px",
+                        borderRadius: 6,
+                        cursor: "pointer",
+                        background:
+                          i === active
+                            ? t.surfaceHover
+                            : isSelected
+                              ? `${t.accent}14`
+                              : "transparent",
                       }}
                     >
-                      {familyName(m.family)}
-                    </div>
-                  )}
-                  <div
-                    role="option"
-                    aria-selected={isSelected}
-                    data-index={i}
-                    onMouseEnter={() => setActive(i)}
-                    onClick={() => choose(m)}
-                    title={
-                      m.languages.length > 2 ? m.languages.map(languageName).join(", ") : undefined
-                    }
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "7px 8px",
-                      borderRadius: 6,
-                      cursor: "pointer",
-                      background:
-                        i === active
-                          ? t.surfaceHover
-                          : isSelected
-                            ? `${t.accent}14`
-                            : "transparent",
-                    }}
-                  >
-                    <span aria-hidden style={{ width: 12, color: t.accent, fontSize: 12 }}>
-                      {isSelected ? "✓" : ""}
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontSize: 13,
-                          color: t.text,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {m.name}
+                      <span aria-hidden style={{ width: 12, color: t.accent, fontSize: 12 }}>
+                        {isSelected ? "✓" : ""}
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontSize: 13,
+                            color: t.text,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {m.name}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: t.textDim,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {[languages, m.size_desc, m.speed_desc].filter(Boolean).join(" · ")}
+                        </div>
                       </div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: t.textDim,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {[languages, m.size_desc, m.speed_desc].filter(Boolean).join(" · ")}
+                      <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}>
+                        {m.tags.filter((tag) => !commonTags.includes(tag)).map((tag) => chip(tag))}
+                        {m.downloaded ? chip("Downloaded", t.successColor) : null}
                       </div>
-                    </div>
-                    <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}>
-                      {m.tags.map((tag) => chip(tag))}
-                      {m.downloaded ? chip("Downloaded", t.successColor) : null}
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-          {!query && hidden > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowAll((s) => !s)}
-              style={{
-                width: "100%",
-                padding: "8px 12px",
-                border: "none",
-                borderTop: `1px solid ${t.border}`,
-                background: "transparent",
-                color: t.accent,
-                fontSize: 12,
-                cursor: "pointer",
-                textAlign: "left",
-              }}
-            >
-              {showAll ? "Show recommended models only" : `Show all ${models.length} models`}
-            </button>
-          )}
-        </div>
-      )}
+                );
+              })}
+            </div>
+            {!query && hidden > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowAll((s) => !s)}
+                style={{
+                  width: "100%",
+                  flexShrink: 0,
+                  padding: "8px 12px",
+                  border: "none",
+                  borderTop: `1px solid ${t.border}`,
+                  background: "transparent",
+                  color: t.accent,
+                  fontSize: 12,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                {showAll ? "Show recommended models only" : `Show all ${models.length} models`}
+              </button>
+            )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
