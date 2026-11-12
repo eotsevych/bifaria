@@ -25,7 +25,9 @@ transcribe-cpp = { version = "=0.4.2", default-features = false, features = ["dy
 # Parakeet's ONNX build on any DirectX 12 GPU. ONNX Runtime with DirectML comes as DLLs, which ship
 # next to the helper (scripts/build_engine.sh); the app itself links the CPU build in.
 [target.'cfg(windows)'.dependencies]
-parakeet-rs = { version = "0.3", features = ["directml"] }
+# The app's versions (src-tauri/Cargo.lock): parakeet-rs 0.3.8 doesn't build against ort rc.15.
+parakeet-rs = { version = "=0.3.7", features = ["directml"] }
+ort = "=2.0.0-rc.13"
 
 # GGUF models on the Mac's GPU (Metal) and CPU; Core ML stays with the Swift helper.
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -344,9 +344,12 @@ jobs:
         run: scripts/build_engine.sh
 
       # NO_STRIP: linuxdeploy's own strip can't read some newer libraries (e.g. OpenVINO's) and fails.
+      # LD_LIBRARY_PATH: linuxdeploy looks up the helper's libraries' own dependencies (OpenVINO's)
+      # only in system folders and this path.
       - name: Build Linux packages
         env:
           NO_STRIP: "true"
+          LD_LIBRARY_PATH: ${{ github.workspace }}/src-tauri/engine-bundle
         run: |
           if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
             bun run tauri build --verbose --bundles appimage,deb,rpm --config "$UPDATER_CONFIG"
