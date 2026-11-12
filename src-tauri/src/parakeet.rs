@@ -143,14 +143,16 @@ const PHONON2_ANE: ModelFiles = ModelFiles {
 /// The helper that runs the Neural Engine build, bundled next to the Bifaria executable.
 const ANE_HELPER: &str = "bifaria-asr";
 
-/// Where the helper runs the Core ML build (Settings → Runs on): "ane", "gpu" or "cpu".
+/// Where Parakeet runs (Settings → Runs on): the Core ML build on "ane", "gpu" or "cpu"; the ONNX
+/// build on "directml" (Windows) or else the CPU.
 static DEVICE: std::sync::Mutex<&'static str> = std::sync::Mutex::new("ane");
 
-/// Sets where the next Core ML load runs; the caller unloads a model loaded elsewhere.
+/// Sets where the next load runs; the caller unloads a model loaded elsewhere.
 pub fn set_device(device: &str) {
     *DEVICE.lock().unwrap() = match device {
         "gpu" => "gpu",
         "cpu" => "cpu",
+        "directml" => "directml",
         _ => "ane",
     };
 }
@@ -163,8 +165,14 @@ fn device_name(device: &str) -> &'static str {
     match device {
         "gpu" => "the GPU",
         "cpu" => "the CPU",
+        "directml" => "the GPU (DirectML)",
         _ => "the Neural Engine",
     }
+}
+
+/// The ONNX build runs on the GPU through DirectML (Windows only).
+fn onnx_on_directml() -> bool {
+    cfg!(windows) && device() == "directml"
 }
 
 /// Where `model_name` can run here, as (Settings value, label): Neural Engine, GPU and CPU through
@@ -177,7 +185,11 @@ pub fn devices(model_name: &str) -> Vec<(&'static str, String)> {
             ("cpu", "CPU".to_string()),
         ]
     } else {
-        vec![("cpu", format!("CPU ({} threads)", crate::cpu_features::parakeet_threads()))]
+        let mut out = vec![("cpu", format!("CPU ({} threads)", crate::cpu_features::parakeet_threads()))];
+        if cfg!(windows) {
+            out.push(("directml", "GPU (DirectML)".to_string()));
+        }
+        out
     }
 }
 
@@ -428,7 +440,7 @@ impl ParakeetTranscriber {
 
     /// Where `model_name` runs now, e.g. "the Neural Engine", or the CPU and why.
     pub fn device_label(model_name: &str) -> String {
-        if Self::runs_on_neural_engine(model_name) {
+        if Self::runs_on_neural_engine(model_name) || onnx_on_directml() {
             return device_name(device()).to_string();
         }
         let cpu = format!("the CPU ({} threads)", crate::cpu_features::parakeet_threads());
@@ -599,6 +611,10 @@ impl ParakeetTranscriber {
         // The crate defaults to 4 threads whatever the machine has.
         let threads = crate::cpu_features::parakeet_threads();
         let config = parakeet_rs::ExecutionConfig::default().with_intra_threads(threads);
+        // If DirectML can't start, ONNX Runtime quietly falls back to the CPU.
+        #[cfg(windows)]
+        let config = if onnx_on_directml() { config.with_execution_provider(parakeet_rs::ExecutionProvider::DirectML) } else { config };
+        let engine = if onnx_on_directml() { "the GPU (DirectML)".to_string() } else { format!("{threads} CPU threads") };
         let parakeet = parakeet_rs::ParakeetTDT::from_pretrained(dir_str, Some(config))
             .map_err(|e| format!("Failed to load Parakeet: {:?}", e))?;
 
@@ -609,9 +625,9 @@ impl ParakeetTranscriber {
             &get_data_dir(),
             "MODEL_LOAD",
             &format!(
-                "Loaded Parakeet TDT in {} ms on {} threads; app memory {} → {} MB",
+                "Loaded Parakeet TDT in {} ms on {}; app memory {} → {} MB",
                 started.elapsed().as_millis(),
-                threads,
+                engine,
                 rss_before,
                 crate::vitals::process_rss_mb()
             ),

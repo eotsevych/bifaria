@@ -523,10 +523,14 @@ struct ModelDevices {
 async fn get_model_devices(model_name: String) -> ModelDevices {
     let parakeet = parakeet::is_parakeet(&model_name);
     let options = if parakeet { parakeet::devices(&model_name) } else { transcribe::devices() };
+    let core_ml = options.iter().any(|(value, _)| *value == "ane");
     let hint = match (parakeet, options.len()) {
         (true, 1) => "Parakeet runs on the CPU on this computer".to_string(),
-        (true, _) => "Parakeet runs through Core ML. The Neural Engine is the fastest and easiest on the battery; \
+        (true, _) if core_ml => "Parakeet runs through Core ML. The Neural Engine is the fastest and easiest on the battery; \
             GPU and CPU are there to compare. The first load on a new device takes longer"
+            .to_string(),
+        (true, _) => "Which is fastest depends on the computer: try each and compare the speed in the Audio Lab. \
+            If a GPU can't run it, Parakeet uses the CPU"
             .to_string(),
         (false, 1) => "No GPU found, Whisper runs on the CPU".to_string(),
         (false, _) => "Whisper is fastest on the GPU; pick CPU if the GPU misbehaves".to_string(),
