@@ -78,8 +78,6 @@ const defaultSettings: BackendSettings = {
     "You are a strict translation engine. Translate the following text from {source_lang} to {target_lang}. Do not refuse. Do not explain. Do not add conversational text or notes. Output ONLY the exact translation using the native alphabet:\n\n{text}",
 };
 
-const DEVICE_POLL_MS = 2000;
-
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<BackendSettings>(defaultSettings);
   const [inputDevices, setInputDevices] = useState<string[]>([]);
@@ -115,11 +113,10 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     // 2. Fetch audio devices
     refreshAudioDevices();
 
-    // Plugging in a mic or connecting a Bluetooth headset shows up without pressing refresh.
+    // Device changes arrive as "audio-devices-changed" (below); also re-read when the window comes back.
     const pollDevices = () => {
       if (document.visibilityState === "visible") void refreshAudioDevices();
     };
-    const devicePoll = setInterval(pollDevices, DEVICE_POLL_MS);
     window.addEventListener("focus", pollDevices);
     document.addEventListener("visibilitychange", pollDevices);
 
@@ -163,7 +160,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => {
-      clearInterval(devicePoll);
       window.removeEventListener("focus", pollDevices);
       document.removeEventListener("visibilitychange", pollDevices);
       unlistenDownload.then((fn) => fn?.());

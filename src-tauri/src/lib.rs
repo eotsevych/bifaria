@@ -190,16 +190,19 @@ fn clear_history(state: State<'_, AppState>) -> Result<(), String> {
     state.controller.clear_history()
 }
 
+/// Async and on a blocking thread: on Windows listing devices opens each one and can take seconds,
+/// which froze the UI thread (and any open file dialog). The device monitor in audio.rs keeps the
+/// tray menu up to date, so this only reads the lists.
 #[tauri::command]
-fn get_audio_devices(app_handle: AppHandle, state: State<'_, AppState>) -> serde_json::Value {
-    let input_devices = audio::list_input_devices();
-    let output_devices = audio::list_output_devices();
-    let settings = state.controller.get_settings();
-    tray::update_tray_audio_devices_with_lists(&app_handle, &settings, &input_devices, &output_devices);
-    serde_json::json!({
-        "input_devices": input_devices,
-        "output_devices": output_devices,
+async fn get_audio_devices() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        serde_json::json!({
+            "input_devices": audio::list_input_devices(),
+            "output_devices": audio::list_output_devices(),
+        })
     })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// Closes the welcome guide; closing it marks it done (see `tray::open_onboarding`).
@@ -354,11 +357,14 @@ async fn download_specific_model(
 }
 
 #[tauri::command]
-fn get_audio_data(
+async fn get_audio_data(
     state: State<'_, AppState>,
     filename: Option<String>,
 ) -> Result<String, String> {
-    state.controller.get_audio_data(filename)
+    let controller = state.controller.clone();
+    tauri::async_runtime::spawn_blocking(move || controller.get_audio_data(filename))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -484,12 +490,15 @@ fn lab_save_result(
 }
 
 #[tauri::command]
-fn save_lab_custom_audio(
+async fn save_lab_custom_audio(
     state: State<'_, AppState>,
     base64_wav: String,
     file_name: Option<String>,
 ) -> Result<String, String> {
-    state.controller.save_lab_custom_audio(base64_wav, file_name)
+    let controller = state.controller.clone();
+    tauri::async_runtime::spawn_blocking(move || controller.save_lab_custom_audio(base64_wav, file_name))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -499,7 +508,7 @@ fn get_hardware_profile() -> cpu_features::HardwareProfile {
 
 /// The GPUs Whisper can run on, for Settings → Hardware acceleration.
 #[tauri::command]
-fn get_gpu_devices() -> Vec<String> {
+async fn get_gpu_devices() -> Vec<String> {
     transcribe::gpu_devices()
 }
 
