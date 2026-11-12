@@ -10,7 +10,7 @@ cask "bifaria" do
   url "https://github.com/eotsevych/bifaria/releases/download/v#{version}/Bifaria_Universal.dmg"
   name "Bifaria"
   desc "Local-first voice dictation and translation"
-  homepage "https://eotsevych.github.io/Bifaria/"
+  homepage "https://bifaria.com/"
 
   livecheck do
     url :url
