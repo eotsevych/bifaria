@@ -25,6 +25,13 @@ pub const HF_BASE_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/reso
 
 pub const AVAILABLE_MODELS: &[(&str, &str, &str, &str, &str)] = &[
     (
+        "tiny",
+        "Whisper Tiny",
+        "78 MB",
+        "Fastest, least accurate",
+        "ggml-tiny.bin",
+    ),
+    (
         "base",
         "Whisper Base",
         "142 MB",
@@ -44,6 +51,20 @@ pub const AVAILABLE_MODELS: &[(&str, &str, &str, &str, &str)] = &[
         "514 MB",
         "High Accuracy (~1.2-2.0 s)",
         "ggml-medium-q5_0.bin",
+    ),
+    (
+        "large-v3-turbo",
+        "Whisper Large v3 Turbo (Q5_0)",
+        "574 MB",
+        "Near Large accuracy; fast with a GPU",
+        "ggml-large-v3-turbo-q5_0.bin",
+    ),
+    (
+        "large-v3",
+        "Whisper Large v3 (Q5_0)",
+        "1.1 GB",
+        "Most accurate Whisper; slow without a GPU",
+        "ggml-large-v3-q5_0.bin",
     ),
     (
         "parakeet",

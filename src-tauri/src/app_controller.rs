@@ -2303,7 +2303,9 @@ impl AppController {
                     .as_ref()
                     .and_then(|done| done.lang.clone())
                     .or_else(|| crate::transcribe::map_language_hint(&settings.source_lang).map(str::to_string));
-                let timeout = inference_timeout(vad_res.trimmed_duration_sec);
+                // Bigger Whisper models load and run slower (Large v3 is 1.1 GB): more time per 500 MB.
+                let model_mb = std::fs::metadata(&model_path).map(|m| m.len() / (1024 * 1024)).unwrap_or(0);
+                let timeout = inference_timeout(vad_res.trimmed_duration_sec).mul_f32((model_mb as f32 / 500.0).max(1.0));
                 let inference_res = tokio::time::timeout(
                     timeout,
                     tokio::task::spawn_blocking(move || {
