@@ -23,7 +23,21 @@ fn main() {
     needs: "Xcode with Swift 6 and network access for FluidAudio",
     missing: "Parakeet will run on the CPU instead of the Neural Engine",
   });
+  stand_in_engine_bundle();
   tauri_build::build()
+}
+
+/// tauri.{windows,linux}.conf.json bundle `engine-bundle/*`, which scripts/build_engine.sh fills
+/// (CI does). Without it, a placeholder keeps the build going; Bifaria then offers no Vulkan.
+fn stand_in_engine_bundle() {
+  let target = std::env::var("TARGET").unwrap_or_default();
+  let dir = Path::new("engine-bundle");
+  if target.ends_with("apple-darwin") || dir.exists() {
+    return;
+  }
+  println!("cargo:warning=No speech helper in src-tauri/engine-bundle (run scripts/build_engine.sh); Parakeet won't offer Vulkan.");
+  std::fs::create_dir_all(dir).expect("create engine-bundle");
+  std::fs::write(dir.join("README.txt"), "Run scripts/build_engine.sh to build the speech helper.\n").expect("write engine-bundle/README.txt");
 }
 
 struct Helper {

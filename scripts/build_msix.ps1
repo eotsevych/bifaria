@@ -16,6 +16,9 @@ New-Item -ItemType Directory -Path (Join-Path $layout "Assets") | Out-Null
 Copy-Item (Join-Path $release "bifaria.exe") (Join-Path $layout "Bifaria.exe")
 # Native libraries built next to the app, if any (most are linked statically).
 Get-ChildItem $release -Filter *.dll -ErrorAction SilentlyContinue | Copy-Item -Destination $layout
+# The speech helper and its libraries (scripts/build_engine.sh), as the installers ship them.
+$engine = Join-Path $root "src-tauri/engine-bundle"
+if (Test-Path $engine) { Copy-Item $engine (Join-Path $layout "engine") -Recurse }
 
 $icons = Join-Path $root "src-tauri/icons"
 foreach ($icon in "StoreLogo.png", "Square150x150Logo.png", "Square44x44Logo.png") {

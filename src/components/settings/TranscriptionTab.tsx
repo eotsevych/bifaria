@@ -163,7 +163,8 @@ export default function TranscriptionTab({ t }: { t: Tokens }) {
             {devices.options.length > 1 ? (
               <FieldSelect
                 value={deviceValue}
-                onChange={(v) => updateSettings({ [devices.setting]: v })}
+                // Another device can need other model files (e.g. GGUF for Vulkan): show if they're downloaded.
+                onChange={(v) => void updateSettings({ [devices.setting]: v }).then(refreshModels)}
                 options={devices.options}
                 t={t}
               />

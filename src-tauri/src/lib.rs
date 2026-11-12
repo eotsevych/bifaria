@@ -606,6 +606,10 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            // The Windows/Linux speech helper ships in resources/engine (see src-tauri/engine).
+            if let Ok(dir) = app.path().resource_dir() {
+                parakeet::set_engine_dir(dir.join("engine"));
+            }
 
             sound::preload();
             perf::init();

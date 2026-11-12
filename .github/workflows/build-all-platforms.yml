@@ -187,7 +187,9 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: |
+            src-tauri
+            src-tauri/engine -> C:/te
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -211,6 +213,27 @@ jobs:
           $loader = @("$sdk\Bin\vulkan-1.dll", "C:\Windows\System32\vulkan-1.dll") | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $loader) { throw "vulkan-1.dll not found" }
           Copy-Item $loader src-tauri\vulkan-1.dll
+
+      # The speech helper that runs Parakeet on Vulkan (src-tauri/engine), shipped as resources/engine.
+      # A short build folder for the same path limit as the app's.
+      - name: Build the speech helper
+        env:
+          ENGINE_TARGET_DIR: C:/te
+        run: scripts/build_engine.sh
+
+      # transcribe-cpp's DLLs need the C++ and OpenMP runtimes; ship them next to the helper.
+      - name: Add the C++ runtime to the speech helper
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -property installationPath
+          $ver = (Get-Content (Join-Path $vs "VC\Auxiliary\Build\Microsoft.VCRedistVersion.default.txt")).Trim()
+          $redist = Join-Path $vs "VC\Redist\MSVC\$ver\x64"
+          foreach ($pattern in @("Microsoft.VC*.CRT", "Microsoft.VC*.OpenMP")) {
+            $dir = Get-ChildItem $redist -Directory -Filter $pattern | Sort-Object Name | Select-Object -Last 1
+            if (-not $dir) { throw "$pattern not found under $redist" }
+            Get-ChildItem $dir.FullName -Filter *.dll | Copy-Item -Destination src-tauri\engine-bundle
+          }
 
       - name: Build Windows installers
         run: |
@@ -297,7 +320,9 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: |
+            src-tauri
+            src-tauri/engine -> target
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -309,6 +334,10 @@ jobs:
         run: |
           bun run typecheck
           bun run lint
+
+      # The speech helper that runs Parakeet on Vulkan (src-tauri/engine), shipped as resources/engine.
+      - name: Build the speech helper
+        run: scripts/build_engine.sh
 
       - name: Build Linux packages
         run: |

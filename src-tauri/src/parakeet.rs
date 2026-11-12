@@ -32,6 +32,20 @@ const ONNX: ModelFiles = ModelFiles {
     url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main",
 };
 
+/// The same model as GGUF for transcribe-cpp (Vulkan GPU or CPU, in the Windows/Linux helper), Q8.
+const V3_GGUF: ModelFiles = ModelFiles {
+    dir: "parakeet-tdt-0.6b-v3-gguf",
+    files: &[("parakeet-tdt-0.6b-v3-Q8_0.gguf", 739_508_576)],
+    url: "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/85ac09ea12fc4b1112fa76810059364bc6adc9de",
+};
+
+/// Parakeet Ultra as GGUF for transcribe-cpp, Q8.
+const ULTRA_GGUF: ModelFiles = ModelFiles {
+    dir: "parakeet-ultra-gguf",
+    files: &[("parakeet-ultra-Q8_0.gguf", 740_363_168)],
+    url: "https://huggingface.co/handy-computer/parakeet-ultra-gguf/resolve/39eeb55181f0d354fd934f06e92fd8d5037fed8e",
+};
+
 /// The same model converted for Core ML, which runs it on the Neural Engine (~480 MB): the files
 /// FluidAudio 0.18 loads (src-tauri/apple-asr), 6-bit encoder.
 const NEURAL_ENGINE: ModelFiles = ModelFiles {
@@ -143,8 +157,9 @@ const PHONON2_ANE: ModelFiles = ModelFiles {
 /// The helper that runs the Neural Engine build, bundled next to the Bifaria executable.
 const ANE_HELPER: &str = "bifaria-asr";
 
-/// Where Parakeet runs (Settings → Runs on): the Core ML build on "ane", "gpu" or "cpu"; the ONNX
-/// build on "directml" (Windows) or else the CPU.
+/// Where Parakeet runs (Settings → Runs on). Mac: the Core ML build on "ane", "gpu" or "cpu".
+/// Windows/Linux: the ONNX build on "cpu" or "directml" (Windows), or the GGUF build in the
+/// transcribe-cpp helper on "vulkan" or "ggml" (its CPU code). See `device_for`.
 static DEVICE: std::sync::Mutex<&'static str> = std::sync::Mutex::new("ane");
 
 /// Sets where the next load runs; the caller unloads a model loaded elsewhere.
@@ -153,8 +168,33 @@ pub fn set_device(device: &str) {
         "gpu" => "gpu",
         "cpu" => "cpu",
         "directml" => "directml",
+        "vulkan" => "vulkan",
+        "ggml" => "ggml",
         _ => "ane",
     };
+}
+
+/// The folder of the Windows/Linux helper and its libraries (the app's resources/engine).
+static ENGINE_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+pub fn set_engine_dir(dir: PathBuf) {
+    let _ = ENGINE_DIR.set(dir);
+}
+
+/// The transcribe-cpp helper (src-tauri/engine) on Windows and Linux, when bundled.
+fn engine_helper() -> Option<PathBuf> {
+    if cfg!(target_os = "macos") {
+        return None;
+    }
+    let path = ENGINE_DIR.get()?.join(if cfg!(windows) { "bifaria-asr.exe" } else { "bifaria-asr" });
+    path.exists().then_some(path)
+}
+
+/// The device `v` runs on: the one picked in Settings if it can run there, else its first option.
+fn device_for(v: &Variant) -> &'static str {
+    let wanted = device();
+    let options = devices(v.name);
+    options.iter().find(|(d, _)| *d == wanted).or(options.first()).map_or("cpu", |(d, _)| *d)
 }
 
 fn device() -> &'static str {
@@ -166,31 +206,44 @@ fn device_name(device: &str) -> &'static str {
         "gpu" => "the GPU",
         "cpu" => "the CPU",
         "directml" => "the GPU (DirectML)",
+        "vulkan" => "the GPU (Vulkan)",
+        "ggml" => "the CPU (ggml)",
         _ => "the Neural Engine",
     }
 }
 
-/// The ONNX build runs on the GPU through DirectML (Windows only).
+/// The ONNX build (v3 only) runs on the GPU through DirectML (Windows only).
 fn onnx_on_directml() -> bool {
-    cfg!(windows) && device() == "directml"
+    cfg!(windows) && device_for(&V3) == "directml"
 }
 
-/// Where `model_name` can run here, as (Settings value, label): Neural Engine, GPU and CPU through
-/// Core ML where the helper runs, otherwise the CPU build.
+/// Where `model_name` can run here, as (Settings value, label), the default first: Neural Engine,
+/// GPU and CPU through Core ML on a Mac; elsewhere ONNX Runtime (CPU, DirectML) and transcribe-cpp
+/// (Vulkan, CPU), as far as the model has those builds.
 pub fn devices(model_name: &str) -> Vec<(&'static str, String)> {
-    if variant(model_name).on_neural_engine_here() {
-        vec![
+    let v = variant(model_name);
+    if v.on_neural_engine_here() {
+        return vec![
             ("ane", "Neural Engine (recommended)".to_string()),
             ("gpu", "GPU".to_string()),
             ("cpu", "CPU".to_string()),
-        ]
-    } else {
-        let mut out = vec![("cpu", format!("CPU ({} threads)", crate::cpu_features::parakeet_threads()))];
-        if cfg!(windows) {
-            out.push(("directml", "GPU (DirectML)".to_string()));
-        }
-        out
+        ];
     }
+    let mut out = Vec::new();
+    if v.cpu.is_some() {
+        out.push(("cpu", format!("CPU · ONNX Runtime ({} threads)", crate::cpu_features::parakeet_threads())));
+        if cfg!(windows) {
+            out.push(("directml", "GPU · DirectML".to_string()));
+        }
+    }
+    if v.gguf.is_some() && engine_helper().is_some() {
+        // whisper-rs's ggml sees the same Vulkan GPUs as the helper's.
+        if let Some(gpu) = crate::transcribe::gpu_devices().into_iter().next() {
+            out.push(("vulkan", format!("GPU · Vulkan ({gpu})")));
+        }
+        out.push(("ggml", "CPU · ggml".to_string()));
+    }
+    out
 }
 
 /// A Parakeet model Bifaria offers. v3 has a CPU (ONNX) and a Neural Engine build; its re-trained
@@ -202,6 +255,8 @@ pub struct Variant {
     pub summary: &'static str,
     cpu: Option<&'static ModelFiles>,
     ane: Option<&'static ModelFiles>,
+    /// GGUF build for the transcribe-cpp helper (Windows, Linux).
+    gguf: Option<&'static ModelFiles>,
     /// FluidAudio's model version the helper loads it as.
     ane_version: &'static str,
     /// Oldest macOS its Core ML build runs on (Phonon-2's encoder format needs macOS 15).
@@ -214,6 +269,7 @@ const V3: Variant = Variant {
     summary: "Real-Time (~80-150 ms, 25 langs)",
     cpu: Some(&ONNX),
     ane: Some(&NEURAL_ENGINE),
+    gguf: Some(&V3_GGUF),
     ane_version: "v3",
     min_macos: 14,
 };
@@ -223,6 +279,7 @@ const ULTRA: Variant = Variant {
     summary: "Most accurate Parakeet, same speed (25 langs)",
     cpu: None,
     ane: Some(&ULTRA_ANE),
+    gguf: Some(&ULTRA_GGUF),
     ane_version: "ultra",
     min_macos: 14,
 };
@@ -232,6 +289,7 @@ const REDUX: Variant = Variant {
     summary: "Smallest; better than v3 in other languages, a bit worse in English",
     cpu: None,
     ane: Some(&REDUX_ANE),
+    gguf: None,
     ane_version: "redux",
     min_macos: 14,
 };
@@ -241,6 +299,7 @@ const PHONON2: Variant = Variant {
     summary: "English only; the fastest",
     cpu: None,
     ane: Some(&PHONON2_ANE),
+    gguf: None,
     ane_version: "phonon2",
     min_macos: 15,
 };
@@ -258,9 +317,17 @@ pub fn variant(model_name: &str) -> &'static Variant {
     VARIANTS.iter().copied().find(|v| v.name == model_name).unwrap_or(&V3)
 }
 
-/// The variant whose Core ML build lives in `dir`.
-fn neural_engine_variant(dir: &Path) -> Option<&'static Variant> {
-    VARIANTS.iter().copied().find(|v| v.ane.is_some_and(|a| a.path() == dir))
+/// The variant whose helper build (Core ML or GGUF) lives in `dir`; true for Core ML.
+fn helper_build(dir: &Path) -> Option<(&'static Variant, bool)> {
+    VARIANTS.iter().copied().find_map(|v| {
+        if v.ane.is_some_and(|a| a.path() == dir) {
+            Some((v, true))
+        } else if v.gguf.is_some_and(|g| g.path() == dir) {
+            Some((v, false))
+        } else {
+            None
+        }
+    })
 }
 
 impl Variant {
@@ -271,14 +338,19 @@ impl Variant {
             && crate::apple_translate::macos_version().is_some_and(|(major, _)| major >= self.min_macos)
     }
 
-    /// Whether this computer can run it: v3 everywhere, the others on the Neural Engine.
+    /// Whether this computer can run it: v3 everywhere, the others through Core ML or the
+    /// Windows/Linux helper.
     pub fn available(&self) -> bool {
-        self.cpu.is_some() || self.on_neural_engine_here()
+        self.cpu.is_some() || self.on_neural_engine_here() || (self.gguf.is_some() && engine_helper().is_some())
     }
 
-    /// The build to use: the Core ML one where it runs, unless only the CPU one is downloaded so
-    /// far (it's then fetched in the background, see `download_neural_engine_model`).
+    /// The build to use: GGUF when Settings picks the helper; else the Core ML one where it runs,
+    /// unless only the CPU one is downloaded so far (it's then fetched in the background, see
+    /// `download_neural_engine_model`).
     fn current(&self) -> &'static ModelFiles {
+        if let Some(gguf) = self.gguf.filter(|_| !self.on_neural_engine_here() && matches!(device_for(self), "vulkan" | "ggml")) {
+            return gguf;
+        }
         match (self.ane, self.cpu) {
             (Some(ane), Some(cpu)) if self.on_neural_engine_here() && (ane.ready() || !cpu.ready()) => ane,
             (_, Some(cpu)) => cpu,
@@ -325,12 +397,21 @@ impl AneHelper {
     /// Starts the helper and loads the model from `dir` as FluidAudio's `version` onto `units`
     /// (compiled for that device on the first load, which can take tens of seconds; Core ML caches it).
     fn start(path: &Path, dir: &Path, version: &str, units: &str) -> Result<Self, String> {
-        let mut child = Command::new(path)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| format!("couldn't start {ANE_HELPER}: {e}"))?;
+        let mut command = Command::new(path);
+        command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            // CREATE_NO_WINDOW: a console helper started from the app would flash a console window.
+            command.creation_flags(0x0800_0000);
+        }
+        // The Linux helper loads transcribe-cpp's libraries from its own folder.
+        #[cfg(target_os = "linux")]
+        if let Some(dir) = path.parent() {
+            let old = std::env::var_os("LD_LIBRARY_PATH").unwrap_or_default();
+            command.env("LD_LIBRARY_PATH", std::env::join_paths(std::iter::once(dir.to_path_buf()).chain(std::env::split_paths(&old))).unwrap_or_default());
+        }
+        let mut child = command.spawn().map_err(|e| format!("couldn't start {ANE_HELPER}: {e}"))?;
         let stdin = child.stdin.take().ok_or("the helper has no stdin")?;
         let stdout = BufReader::new(child.stdout.take().ok_or("the helper has no stdout")?);
         let mut helper = Self { child, stdin, stdout };
@@ -440,8 +521,11 @@ impl ParakeetTranscriber {
 
     /// Where `model_name` runs now, e.g. "the Neural Engine", or the CPU and why.
     pub fn device_label(model_name: &str) -> String {
-        if Self::runs_on_neural_engine(model_name) || onnx_on_directml() {
-            return device_name(device()).to_string();
+        let v = variant(model_name);
+        let build = v.current();
+        let in_helper = [v.ane, v.gguf].iter().flatten().any(|b| std::ptr::eq(*b, build));
+        if in_helper || onnx_on_directml() {
+            return device_name(device_for(v)).to_string();
         }
         let cpu = format!("the CPU ({} threads)", crate::cpu_features::parakeet_threads());
         if variant(model_name).on_neural_engine_here() {
@@ -476,7 +560,7 @@ impl ParakeetTranscriber {
     pub async fn ensure_model(app_handle: &AppHandle, model_name: &str) -> Result<PathBuf, String> {
         let v = variant(model_name);
         if !v.available() {
-            return Err(format!("{} runs only on the Neural Engine of a Mac with Apple silicon (macOS {}+)", v.title, v.min_macos));
+            return Err(format!("{} doesn't run on this computer (it needs a Mac with Apple silicon, macOS {}+)", v.title, v.min_macos));
         }
         if Self::model_ready(model_name) {
             return Ok(Self::get_model_dir(model_name));
@@ -591,19 +675,24 @@ impl ParakeetTranscriber {
 
         let rss_before = crate::vitals::process_rss_mb();
         let started = Instant::now();
-        if let Some(v) = neural_engine_variant(model_dir) {
-            let helper = ane_helper().ok_or("the Neural Engine helper isn't available")?;
+        if let Some((v, core_ml)) = helper_build(model_dir) {
+            let helper = if core_ml { ane_helper() } else { engine_helper() }.ok_or("the speech helper isn't available")?;
             // One model at a time: the CPU session goes before the helper loads.
             self.model = None;
             self.ane = None;
-            let units = device();
+            let device = device_for(v);
+            let units = match device {
+                _ if core_ml => device,
+                "ggml" => "cpu",
+                _ => "vulkan",
+            };
             self.ane = Some(AneHelper::start(&helper, model_dir, v.ane_version, units)?);
             self.current_dir = dir_str.to_string();
             self.threads = 0;
             crate::pipeline_logger::log_stage_event(
                 &get_data_dir(),
                 "MODEL_LOAD",
-                &format!("Loaded {} on {} in {} ms (in {ANE_HELPER})", v.title, device_name(units), started.elapsed().as_millis()),
+                &format!("Loaded {} on {} in {} ms (in {ANE_HELPER})", v.title, device_name(device), started.elapsed().as_millis()),
             );
             return Ok(());
         }
@@ -648,18 +737,18 @@ impl ParakeetTranscriber {
         }
 
         let mut model_dir = model_dir.to_path_buf();
-        if neural_engine_variant(&model_dir).is_some() {
+        if helper_build(&model_dir).is_some() {
             match self.transcribe_on_neural_engine(samples, &model_dir) {
                 Ok(done) => return Ok(done),
                 // A helper that failed is started afresh next time; this recording goes to the CPU.
                 Err(e) if ONNX.ready() => {
-                    log::warn!("Parakeet on the Neural Engine failed ({e}); transcribing with Parakeet v3 on the CPU");
+                    log::warn!("Parakeet in {ANE_HELPER} failed ({e}); transcribing with Parakeet v3 on the CPU");
                     self.ane = None;
                     model_dir = ONNX.path();
                 }
                 Err(e) => {
                     self.ane = None;
-                    return Err(format!("Parakeet on the Neural Engine failed: {e}"));
+                    return Err(format!("Parakeet in {ANE_HELPER} failed: {e}"));
                 }
             }
         }
@@ -758,9 +847,12 @@ mod tests {
         // Each Core ML folder belongs to its own variant, so the helper loads the right version.
         for v in VARIANTS {
             let ane = v.ane.expect("every variant has a Core ML build");
-            assert_eq!(neural_engine_variant(&ane.path()).map(|f| f.name), Some(v.name));
+            assert_eq!(helper_build(&ane.path()).map(|(f, core_ml)| (f.name, core_ml)), Some((v.name, true)));
+            if let Some(gguf) = v.gguf {
+                assert_eq!(helper_build(&gguf.path()).map(|(f, core_ml)| (f.name, core_ml)), Some((v.name, false)));
+            }
         }
-        assert!(neural_engine_variant(&ONNX.path()).is_none());
+        assert!(helper_build(&ONNX.path()).is_none());
         // v3 runs anywhere (its CPU build); the others only where the Neural Engine helper runs.
         assert!(V3.available());
     }
