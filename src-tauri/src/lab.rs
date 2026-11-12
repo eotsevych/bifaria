@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 use crate::parakeet::ParakeetTranscriber;
 use crate::settings::get_data_dir;
@@ -306,6 +306,19 @@ fn log_lab_run(app_handle: &AppHandle, model: &str, audio_sec: f32, total_ms: u6
     );
 }
 
+/// Tells Audio Lab what a run is doing: `stage`, and while transcribing the share done (none on
+/// the Neural Engine, which can't report it).
+fn report(app_handle: &AppHandle, stage: &str, fraction: Option<f32>) {
+    let _ = app_handle.emit("lab-progress", serde_json::json!({ "stage": stage, "fraction": fraction }));
+}
+
+/// Progress reports for the transcription itself.
+fn transcription_progress(app_handle: &AppHandle) -> crate::transcribe::Progress {
+    report(app_handle, "Transcribing", None);
+    let app = app_handle.clone();
+    Arc::new(move |fraction| report(&app, "Transcribing", Some(fraction)))
+}
+
 /// Executes a test experiment on the given audio file.
 pub async fn run_experiment(
     app_handle: &AppHandle,
@@ -333,9 +346,11 @@ pub async fn run_experiment(
         return Err(format!("Audio file not found: {:?}", audio_path));
     }
 
+    report(app_handle, "Reading the file", None);
     let (file_samples, sample_rate) = decode_audio_file(&audio_path)?;
     let file_samples = match req.noise_reduction.as_deref().and_then(crate::denoise::strength_wet) {
         Some(wet) => {
+            report(app_handle, "Removing noise", None);
             let clean = crate::denoise::denoise(&file_samples, sample_rate, wet);
             // Saved so the denoised version can be listened to.
             let _ = crate::history::write_wav_file(&data_dir.join("lab_denoised.wav"), &clean, sample_rate);
@@ -353,6 +368,7 @@ pub async fn run_experiment(
 
     // Optional VAD stage
     let (processed_samples, chunks, vad_time_ms, processed_duration_sec, vad_cut_sec, vad_audio_filename) = if req.use_vad {
+        report(app_handle, "Finding speech", None);
         let vad_t0 = Instant::now();
         let vad_res = trim_silence(&raw_samples, 16000);
         let elapsed = vad_t0.elapsed().as_millis() as u64;
@@ -394,11 +410,13 @@ pub async fn run_experiment(
             let mut tr = transcriber.lock().unwrap();
             tr.unload();
         }
+        report(app_handle, "Loading the model", None);
         let model_dir = ParakeetTranscriber::ensure_model(app_handle).await?;
         let t0 = Instant::now();
         let res = {
             let mut pk = parakeet_transcriber.lock().unwrap();
-            let res = pk.transcribe(&processed_samples, &chunks, &model_dir);
+            let progress = transcription_progress(app_handle);
+            let res = pk.transcribe_reporting(&processed_samples, &chunks, &model_dir, Some(progress));
             // A lab run frees its model straight away instead of leaving it to the idle cleanup.
             pk.unload();
             res
@@ -477,12 +495,14 @@ pub async fn run_experiment(
             let mut pk = parakeet_transcriber.lock().unwrap();
             pk.unload();
         }
+        report(app_handle, "Loading the model", None);
         let model_path = Transcriber::ensure_model(app_handle, &req.model_name).await?;
         let lang_opt = req.language.as_deref();
         let t0 = Instant::now();
         let res = {
             let mut tr = transcriber.lock().unwrap();
-            let res = tr.transcribe_detailed(&processed_samples, &chunks, &model_path, false, lang_opt);
+            let progress = transcription_progress(app_handle);
+            let res = tr.transcribe_detailed_reporting(&processed_samples, &chunks, &model_path, false, lang_opt, Some(progress));
             // A lab run frees its model straight away instead of leaving it to the idle cleanup.
             tr.unload();
             res

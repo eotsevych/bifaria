@@ -1176,7 +1176,9 @@ impl AppController {
         crate::pipeline_logger::set_private(crate::settings::is_private(&new_settings.storage_mode));
         crate::tray::sync_translation_menu(&new_settings);
         if devices_changed {
-            crate::tray::update_tray_audio_devices(&self.app_handle, &new_settings);
+            // Listing devices can take seconds on Linux; this may run on the UI thread (Settings, tray, pill).
+            let (app, settings) = (self.app_handle.clone(), new_settings.clone());
+            std::thread::spawn(move || crate::tray::update_tray_audio_devices(&app, &settings));
         }
 
         // Single Model Policy: If active model changed, drop the other from RAM immediately

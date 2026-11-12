@@ -7,73 +7,40 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
-pub fn list_input_devices() -> Vec<String> {
-    let host = cpal::default_host();
-    let mut names = Vec::new();
-
-    // Query all host devices and filter those supporting input
-    if let Ok(devices) = host.devices() {
+/// Input and output device names from one pass over the devices. On Linux each pass opens every
+/// ALSA device (hw:, plughw:, dmix, pulse…) and probes its formats, so callers that need both lists
+/// use this instead of the two functions below.
+pub fn list_devices() -> (Vec<String>, Vec<String>) {
+    let (mut inputs, mut outputs) = (Vec::new(), Vec::new());
+    // cpal's input_devices() and output_devices() are filters over devices(), so this sees them all.
+    if let Ok(devices) = cpal::default_host().devices() {
         for d in devices {
+            let Ok(name) = d.name() else { continue };
+            let name = name.trim().to_string();
+            if name.is_empty() {
+                continue;
+            }
             let has_input = d.default_input_config().is_ok()
                 || d.supported_input_configs().map(|mut c| c.next().is_some()).unwrap_or(false);
-            if has_input {
-                if let Ok(name) = d.name() {
-                    let trimmed = name.trim().to_string();
-                    if !trimmed.is_empty() && !names.contains(&trimmed) {
-                        names.push(trimmed);
-                    }
-                }
+            let has_output = d.default_output_config().is_ok()
+                || d.supported_output_configs().map(|mut c| c.next().is_some()).unwrap_or(false);
+            if has_input && !inputs.contains(&name) {
+                inputs.push(name.clone());
+            }
+            if has_output && !outputs.contains(&name) {
+                outputs.push(name);
             }
         }
     }
+    (inputs, outputs)
+}
 
-    // Also include any devices from host.input_devices()
-    if let Ok(devices) = host.input_devices() {
-        for d in devices {
-            if let Ok(name) = d.name() {
-                let trimmed = name.trim().to_string();
-                if !trimmed.is_empty() && !names.contains(&trimmed) {
-                    names.push(trimmed);
-                }
-            }
-        }
-    }
-
-    names
+pub fn list_input_devices() -> Vec<String> {
+    list_devices().0
 }
 
 pub fn list_output_devices() -> Vec<String> {
-    let host = cpal::default_host();
-    let mut names = Vec::new();
-
-    // Query all host devices and filter those supporting output
-    if let Ok(devices) = host.devices() {
-        for d in devices {
-            let has_output = d.default_output_config().is_ok()
-                || d.supported_output_configs().map(|mut c| c.next().is_some()).unwrap_or(false);
-            if has_output {
-                if let Ok(name) = d.name() {
-                    let trimmed = name.trim().to_string();
-                    if !trimmed.is_empty() && !names.contains(&trimmed) {
-                        names.push(trimmed);
-                    }
-                }
-            }
-        }
-    }
-
-    if let Ok(devices) = host.output_devices() {
-        for d in devices {
-            if let Ok(name) = d.name() {
-                let trimmed = name.trim().to_string();
-                if !trimmed.is_empty() && !names.contains(&trimmed) {
-                    names.push(trimmed);
-                }
-            }
-        }
-    }
-
-    names
+    list_devices().1
 }
 
 pub fn resolve_input_device(device_name: Option<&str>) -> Option<cpal::Device> {
@@ -1730,8 +1697,7 @@ pub fn start_device_monitor(app_handle: AppHandle) {
             // Nothing sends here off macOS; holding the sender keeps the channel from disconnecting.
             #[cfg(not(target_os = "macos"))]
             let _tx = tx;
-            let mut last_inputs = list_input_devices();
-            let mut last_outputs = list_output_devices();
+            let (mut last_inputs, mut last_outputs) = list_devices();
 
             loop {
                 // macOS tells us when devices change; elsewhere the lists are checked every 2 seconds.
@@ -1754,8 +1720,7 @@ pub fn start_device_monitor(app_handle: AppHandle) {
                     while rx.try_recv().is_ok() {}
                 }
 
-                let current_inputs = list_input_devices();
-                let current_outputs = list_output_devices();
+                let (current_inputs, current_outputs) = list_devices();
 
                 if current_inputs != last_inputs || current_outputs != last_outputs {
                     DEVICE_CHANGES.fetch_add(1, Ordering::SeqCst);

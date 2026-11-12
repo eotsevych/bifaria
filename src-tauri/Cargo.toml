@@ -1,6 +1,6 @@
 [package]
 name = "bifaria"
-version = "1.0.2"
+version = "1.0.3"
 description = "Bifaria Desktop Assistant"
 authors = ["Bifaria Team"]
 edition = "2021"

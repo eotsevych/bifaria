@@ -628,6 +628,21 @@ export async function subscribeToAudioDeviceChanges(
   }
 }
 
+/** What an Audio Lab run is doing; `fraction` (0-1) only while transcribing, and not on the Neural Engine. */
+export type LabProgress = { stage: string; fraction: number | null };
+
+export async function subscribeToLabProgress(
+  callback: (payload: LabProgress) => void,
+): Promise<UnlistenFn | null> {
+  if (!isTauri()) return null;
+  try {
+    return await listen<LabProgress>("lab-progress", (event) => callback(event.payload));
+  } catch (err) {
+    console.error("Failed to listen to Audio Lab progress:", err);
+    return null;
+  }
+}
+
 export async function subscribeToDiagnosticLogs(
   callback: (payload: TranscriptionDiagnosticLog) => void,
 ): Promise<UnlistenFn | null> {

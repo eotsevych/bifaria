@@ -196,10 +196,8 @@ fn clear_history(state: State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 async fn get_audio_devices() -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(|| {
-        serde_json::json!({
-            "input_devices": audio::list_input_devices(),
-            "output_devices": audio::list_output_devices(),
-        })
+        let (input_devices, output_devices) = audio::list_devices();
+        serde_json::json!({ "input_devices": input_devices, "output_devices": output_devices })
     })
     .await
     .map_err(|e| e.to_string())

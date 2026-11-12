@@ -2,7 +2,7 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
 
-use crate::audio::{list_input_devices, list_output_devices};
+use crate::audio::list_devices;
 use crate::settings::AppSettings;
 
 /// Windows that make Bifaria behave like a regular app while they're open.
@@ -371,8 +371,7 @@ pub fn set_tray_recording(app: &AppHandle, is_recording: bool, llm_loaded: bool)
 }
 
 pub fn update_tray_audio_devices(app: &AppHandle, settings: &AppSettings) {
-    let input_devices = list_input_devices();
-    let output_devices = list_output_devices();
+    let (input_devices, output_devices) = list_devices();
     update_tray_audio_devices_with_lists(app, settings, &input_devices, &output_devices);
 }
 
@@ -509,8 +508,7 @@ pub fn create_tray(app: &AppHandle, settings: &AppSettings) -> Result<TrayIcon, 
     let output_submenu = Submenu::new(app, "Audio Output", true)?;
     let _ = OUTPUT_SUBMENU.set(output_submenu.clone());
 
-    let input_devices = list_input_devices();
-    let output_devices = list_output_devices();
+    let (input_devices, output_devices) = list_devices();
     update_tray_audio_devices_with_lists(app, settings, &input_devices, &output_devices);
 
     // Translation submenu: when to translate (the mode), then which service does it.

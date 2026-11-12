@@ -414,6 +414,18 @@ impl ParakeetTranscriber {
         chunks: &[Range<usize>],
         model_dir: &Path,
     ) -> Result<(String, String, u64, i32), String> {
+        self.transcribe_reporting(samples, chunks, model_dir, None)
+    }
+
+    /// `transcribe`, calling `on_progress` with the share done after each piece on the CPU. The
+    /// Neural Engine takes the whole recording in one call, so it reports nothing until the end.
+    pub fn transcribe_reporting(
+        &mut self,
+        samples: &[f32],
+        chunks: &[Range<usize>],
+        model_dir: &Path,
+        on_progress: Option<crate::transcribe::Progress>,
+    ) -> Result<(String, String, u64, i32), String> {
         if samples.is_empty() {
             return Ok((String::new(), "auto".to_string(), 0, 0));
         }
@@ -447,13 +459,19 @@ impl ParakeetTranscriber {
 
         let t0 = Instant::now();
         let mut texts = Vec::new();
+        let total = chunks.iter().map(|c| c.len()).sum::<usize>().max(1);
+        let mut done = 0;
         for chunk in chunks {
             let audio = &samples[chunk.clone()];
             for range in model_segments(audio, 16000) {
+                done += range.len();
                 let result = parakeet
                     .transcribe_samples(audio[range].to_vec(), 16000, 1, None)
                     .map_err(|e| format!("Parakeet transcription error: {:?}", e))?;
                 texts.push(result.text);
+                if let Some(report) = &on_progress {
+                    report(done as f32 / total as f32);
+                }
             }
         }
         let inference_ms = t0.elapsed().as_millis() as u64;

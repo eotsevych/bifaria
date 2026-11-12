@@ -14,6 +14,8 @@ import {
   triggerLabTranslate,
   triggerLabSaveResult,
   fetchAppleTranslationInfo,
+  subscribeToLabProgress,
+  type LabProgress,
   type LabTranslation,
   isTauri,
   type LabAudioItem,
@@ -21,6 +23,15 @@ import {
   NOISE_REDUCTION_OPTIONS,
   type NoiseReduction,
 } from "@/lib/tauri";
+
+/** "45 s", "12 min" or "1 h 05 min". */
+function formatDuration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s} s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min`;
+}
 
 const TRANSLATION_SERVICES = [
   { value: "LLM", label: "LLM" },
@@ -85,6 +96,26 @@ export default function AudioLabTab({
     settings.noise_reduction ?? "off",
   );
   const [phase, setPhase] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [progress, setProgress] = useState<LabProgress | null>(null);
+  // When the run and its transcription started; the time left is estimated from the latter.
+  const runStart = useRef(0);
+  const transcribeStart = useRef<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (phase !== "running") return;
+    const unlisten = subscribeToLabProgress((p) => {
+      if (p.stage === "Transcribing" && transcribeStart.current === null) {
+        transcribeStart.current = Date.now();
+      }
+      setProgress(p);
+    });
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => {
+      unlisten.then((fn) => fn?.());
+      clearInterval(timer);
+    };
+  }, [phase]);
   const [result, setResult] = useState<LabExperimentResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rawUploadName, setRawUploadName] = useState<string | null>(null);
@@ -207,6 +238,10 @@ export default function AudioLabTab({
       setError("Pick a recording first.");
       return;
     }
+    runStart.current = Date.now();
+    transcribeStart.current = null;
+    setProgress(null);
+    setNow(Date.now());
     setPhase("running");
     setError(null);
     setResult(null);
@@ -761,11 +796,27 @@ export default function AudioLabTab({
             <div
               style={{
                 height: "100%",
-                width: "100%",
+                // A full bar while the stage can't say how far it is.
+                width: `${progress?.fraction != null ? Math.round(progress.fraction * 100) : 100}%`,
                 background: "linear-gradient(90deg, " + t.accent + ", #00d4ff)",
+                transition: "width 0.4s",
               }}
             />
           </div>
+          <p style={{ fontSize: 12, color: t.textMuted, margin: "6px 0 0" }}>
+            {(() => {
+              const parts = [progress?.stage ?? "Starting"];
+              const f = progress?.fraction;
+              if (f != null) parts.push(`${Math.floor(f * 100)}%`);
+              parts.push(`${formatDuration(now - runStart.current)} elapsed`);
+              // Too early to guess before 2%: the first minute includes loading the model.
+              if (f != null && f >= 0.02 && f < 1 && transcribeStart.current !== null) {
+                const spent = now - transcribeStart.current;
+                parts.push(`about ${formatDuration((spent * (1 - f)) / f)} left`);
+              }
+              return parts.join(" \u00b7 ");
+            })()}
+          </p>
         </div>
       )}
 
