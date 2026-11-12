@@ -9,7 +9,7 @@ engine="$root/src-tauri/engine"
 out="$root/src-tauri/engine-bundle"
 target="${ENGINE_TARGET_DIR:-$engine/target}"
 
-# ONNX Runtime (DirectML, Windows) links its DLLs into these; a fresh or restored build folder can lack them.
+# ort (DirectML, Windows) copies DirectML.dll into these; a fresh or restored build folder can lack them.
 mkdir -p "$target"/release/{examples,deps} "$target"/release/build/{examples,deps}
 cargo build --release --manifest-path "$engine/Cargo.toml" --target-dir "$target"
 
@@ -20,11 +20,10 @@ mkdir -p "$out"
 cp "$target/release/$exe" "$out/"
 cp "$engine/runtime-libs/"* "$out/"
 if [[ $exe == *.exe ]]; then
-  # ONNX Runtime with DirectML for Parakeet's ONNX build on the GPU.
-  for dll in onnxruntime.dll onnxruntime_providers_shared.dll DirectML.dll; do
-    found=$(find "$target/release" -maxdepth 3 -name "$dll" | head -1)
-    if [[ -n "$found" ]]; then cp "$found" "$out/"; elif [[ $dll != onnxruntime_providers_shared.dll ]]; then echo "$dll wasn't built" >&2; exit 1; fi
-  done
+  # DirectML for Parakeet's ONNX build on the GPU (ONNX Runtime itself is linked into the helper).
+  found=$(find "$target/release" -maxdepth 3 -name DirectML.dll | head -1)
+  [[ -n "$found" ]] || { echo "DirectML.dll wasn't built" >&2; exit 1; }
+  cp -L "$found" "$out/"
 fi
 
 # The tests load the libraries next to the helper.
