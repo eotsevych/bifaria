@@ -1,8 +1,11 @@
 name: transcribe-cpp benchmark (spike)
 
 # Builds tools/tcpp-bench for Windows x64 (Vulkan + per-CPU modules, as Handy ships it) and uploads a
-# zip a tester runs with run-bench.ps1. Manual only; not part of the app or its releases.
+# zip a tester runs with run-bench.ps1. Runs on pushes to spike/ branches; not part of the app or
+# its releases.
 on:
+  push:
+    branches: ['spike/**']
   workflow_dispatch:
 
 permissions:
