@@ -810,7 +810,14 @@ export default function AudioLabTab({
               if (f != null) parts.push(`${Math.floor(f * 100)}%`);
               parts.push(`${formatDuration(now - runStart.current)} elapsed`);
               // Too early to guess before 2%: the first minute includes loading the model.
-              if (f != null && f >= 0.02 && f < 1 && transcribeStart.current !== null) {
+              // Not while paused for a dictation: the pause would throw the estimate off.
+              if (
+                progress?.stage === "Transcribing" &&
+                f != null &&
+                f >= 0.02 &&
+                f < 1 &&
+                transcribeStart.current !== null
+              ) {
                 const spent = now - transcribeStart.current;
                 parts.push(`about ${formatDuration((spent * (1 - f)) / f)} left`);
               }

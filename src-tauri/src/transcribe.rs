@@ -4,15 +4,11 @@ use std::io::Write;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::Instant;
 use tauri::AppHandle;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 use crate::settings::get_data_dir;
-
-/// Called with the share of the audio transcribed so far, from 0.0 to 1.0.
-pub type Progress = Arc<dyn Fn(f32) + Send + Sync>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelCatalogItem {
@@ -420,19 +416,6 @@ impl Transcriber {
         translate_to_english: bool,
         language_override: Option<&str>,
     ) -> Result<DetailedWhisperResult, String> {
-        self.transcribe_detailed_reporting(samples, chunks, model_path, translate_to_english, language_override, None)
-    }
-
-    /// `transcribe_detailed`, calling `on_progress` with the share of `chunks` done as it goes.
-    pub fn transcribe_detailed_reporting(
-        &mut self,
-        samples: &[f32],
-        chunks: &[Range<usize>],
-        model_path: &Path,
-        translate_to_english: bool,
-        language_override: Option<&str>,
-        on_progress: Option<Progress>,
-    ) -> Result<DetailedWhisperResult, String> {
         if samples.is_empty() {
             return Ok(DetailedWhisperResult {
                 text: String::new(),
@@ -466,8 +449,6 @@ impl Transcriber {
         let mut segments = Vec::new();
         let mut raw_debug_lines = Vec::new();
         let mut detected_lang = "auto";
-        let total = chunks.iter().map(|c| c.len()).sum::<usize>().max(1);
-        let mut done = 0;
 
         for (i, chunk) in chunks.iter().enumerate() {
             let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
@@ -487,21 +468,10 @@ impl Transcriber {
             params.set_print_special(false); // Do not inject special tokens into segments
             params.set_print_realtime(false);
             params.set_print_timestamps(false);
-            if let Some(report) = &on_progress {
-                let (report, before, len) = (Arc::clone(report), done, chunk.len());
-                // whisper.cpp reports 0-100 within this chunk.
-                params.set_progress_callback_safe(move |pct: i32| {
-                    report((before + len * pct.clamp(0, 100) as usize / 100) as f32 / total as f32)
-                });
-            }
 
             state
                 .full(params, &samples[chunk.clone()])
                 .map_err(|e| format!("Whisper transcription failed: {:?}", e))?;
-            done += chunk.len();
-            if let Some(report) = &on_progress {
-                report(done as f32 / total as f32);
-            }
 
             // Segment times are within the chunk; shifted to times in the whole recording.
             let offset_ms = (chunk.start * 1000 / 16000) as i64;

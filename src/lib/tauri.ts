@@ -628,7 +628,7 @@ export async function subscribeToAudioDeviceChanges(
   }
 }
 
-/** What an Audio Lab run is doing; `fraction` (0-1) only while transcribing, and not on the Neural Engine. */
+/** What an Audio Lab run is doing; `fraction` (0-1) once it is transcribing. */
 export type LabProgress = { stage: string; fraction: number | null };
 
 export async function subscribeToLabProgress(

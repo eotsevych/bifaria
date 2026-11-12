@@ -1286,6 +1286,7 @@ impl AppController {
             &self.app_handle,
             Arc::clone(&self.transcriber),
             Arc::clone(&self.parakeet_transcriber),
+            Arc::clone(&self.phase),
             req,
         )
         .await
@@ -1825,7 +1826,8 @@ impl AppController {
             serde_json::json!({
                 "state": "listening",
                 "title": "Listening…",
-                "subtitle": null,
+                // Audio Lab waits between pieces while a dictation runs (see lab::yield_to_dictation).
+                "subtitle": crate::lab::is_transcribing().then_some("Audio Lab paused for this"),
                 "mode": mode.pill_mode(&settings)
             }),
         );
@@ -2048,7 +2050,10 @@ impl AppController {
             self.spawn_model_prewarm(&settings.model_name);
         }
         let target_norm = crate::translate::normalize_lang(&settings.target_lang);
-        let transcribing_subtitle = if target_norm == "none" {
+        let transcribing_subtitle = if crate::lab::is_transcribing() {
+            // It may first wait for Audio Lab to finish the piece it's on.
+            "Audio Lab paused; may take a few seconds longer".to_string()
+        } else if target_norm == "none" {
             "Voice to Text".to_string()
         } else {
             "Converting speech to text".to_string()

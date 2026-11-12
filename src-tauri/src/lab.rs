@@ -1,11 +1,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
+use crate::app_controller::AssistantPhase;
 use crate::parakeet::ParakeetTranscriber;
 use crate::settings::get_data_dir;
 use crate::transcribe::{DiagnosticSegment, Transcriber};
@@ -306,17 +308,77 @@ fn log_lab_run(app_handle: &AppHandle, model: &str, audio_sec: f32, total_ms: u6
     );
 }
 
-/// Tells Audio Lab what a run is doing: `stage`, and while transcribing the share done (none on
-/// the Neural Engine, which can't report it).
+/// Tells Audio Lab what a run is doing: `stage`, and while transcribing the share done.
 fn report(app_handle: &AppHandle, stage: &str, fraction: Option<f32>) {
     let _ = app_handle.emit("lab-progress", serde_json::json!({ "stage": stage, "fraction": fraction }));
 }
 
-/// Progress reports for the transcription itself.
-fn transcription_progress(app_handle: &AppHandle) -> crate::transcribe::Progress {
-    report(app_handle, "Transcribing", None);
-    let app = app_handle.clone();
-    Arc::new(move |fraction| report(&app, "Transcribing", Some(fraction)))
+/// Longest piece Audio Lab gives a model at once. It holds the model only for a piece, so a
+/// dictation waits at most this long (see `yield_to_dictation`).
+const LAB_PIECE_SEC: usize = 60;
+/// Each cut can lose a word on the Neural Engine, which reads long audio with overlap itself, so
+/// its pieces are longer; it is fast enough that one still takes only seconds.
+const LAB_PIECE_SEC_NEURAL_ENGINE: usize = 600;
+
+static TRANSCRIBING: AtomicBool = AtomicBool::new(false);
+
+/// Whether Audio Lab is transcribing a file, for the pill's note during a dictation.
+pub fn is_transcribing() -> bool {
+    TRANSCRIBING.load(Ordering::Relaxed)
+}
+
+/// Marks Audio Lab as transcribing until dropped, whichever way the run ends.
+struct Transcribing;
+
+impl Transcribing {
+    fn start() -> Self {
+        TRANSCRIBING.store(true, Ordering::Relaxed);
+        Transcribing
+    }
+}
+
+impl Drop for Transcribing {
+    fn drop(&mut self) {
+        TRANSCRIBING.store(false, Ordering::Relaxed);
+    }
+}
+
+/// A dictation is being recorded, transcribed or translated.
+fn dictation_active(phase: &Mutex<AssistantPhase>) -> bool {
+    matches!(
+        *phase.lock().unwrap_or_else(|e| e.into_inner()),
+        AssistantPhase::Listening | AssistantPhase::Transcribing | AssistantPhase::Translating
+    )
+}
+
+/// The user's own dictation goes first: waits, between pieces, until it is done.
+fn yield_to_dictation(app_handle: &AppHandle, phase: &Mutex<AssistantPhase>, done: f32) {
+    if !dictation_active(phase) {
+        return;
+    }
+    report(app_handle, "Paused for your dictation", Some(done));
+    let paused = Instant::now();
+    while dictation_active(phase) {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    crate::pipeline_logger::log_stage_event(
+        &get_data_dir(),
+        "LAB_PAUSE",
+        &format!("Audio Lab paused {} ms for a dictation", paused.elapsed().as_millis()),
+    );
+    report(app_handle, "Transcribing", Some(done));
+}
+
+/// Each of `chunks` cut at pauses into pieces of at most `max_sec`, as ranges of the whole.
+fn lab_pieces(samples: &[f32], chunks: &[std::ops::Range<usize>], max_sec: usize) -> Vec<std::ops::Range<usize>> {
+    chunks
+        .iter()
+        .flat_map(|c| {
+            crate::parakeet::cut_at_pauses(&samples[c.clone()], 16000, max_sec)
+                .into_iter()
+                .map(move |r| c.start + r.start..c.start + r.end)
+        })
+        .collect()
 }
 
 /// Executes a test experiment on the given audio file.
@@ -324,6 +386,7 @@ pub async fn run_experiment(
     app_handle: &AppHandle,
     transcriber: Arc<Mutex<Transcriber>>,
     parakeet_transcriber: Arc<Mutex<ParakeetTranscriber>>,
+    dictation_phase: Arc<Mutex<AssistantPhase>>,
     req: LabExperimentRequest,
 ) -> Result<LabExperimentResult, String> {
     let data_dir = get_data_dir();
@@ -352,6 +415,7 @@ pub async fn run_experiment(
         Some(wet) => {
             report(app_handle, "Removing noise", None);
             let clean = crate::denoise::denoise(&file_samples, sample_rate, wet);
+            drop(file_samples);
             // Saved so the denoised version can be listened to.
             let _ = crate::history::write_wav_file(&data_dir.join("lab_denoised.wav"), &clean, sample_rate);
             clean
@@ -360,6 +424,8 @@ pub async fn run_experiment(
     };
     // History recordings are saved at the microphone's own rate; the models need 16 kHz.
     let raw_samples = crate::audio::resample_to_16k(&file_samples, sample_rate);
+    // A long file at 48 kHz is ~1 GB; only the 16 kHz copy is used from here on.
+    drop(file_samples);
     if raw_samples.is_empty() {
         return Err("Audio file is empty".to_string());
     }
@@ -371,6 +437,7 @@ pub async fn run_experiment(
         report(app_handle, "Finding speech", None);
         let vad_t0 = Instant::now();
         let vad_res = trim_silence(&raw_samples, 16000);
+        drop(raw_samples);
         let elapsed = vad_t0.elapsed().as_millis() as u64;
 
         // Save trimmed audio for playback
@@ -393,7 +460,7 @@ pub async fn run_experiment(
             vec![0..raw_samples.len()]
         };
         (
-            raw_samples.clone(),
+            raw_samples,
             chunks,
             0,
             original_duration_sec,
@@ -413,16 +480,34 @@ pub async fn run_experiment(
         report(app_handle, "Loading the model", None);
         let model_dir = ParakeetTranscriber::ensure_model(app_handle).await?;
         let t0 = Instant::now();
-        let res = {
-            let mut pk = parakeet_transcriber.lock().unwrap();
-            let progress = transcription_progress(app_handle);
-            let res = pk.transcribe_reporting(&processed_samples, &chunks, &model_dir, Some(progress));
+        let max_sec = if ParakeetTranscriber::runs_on_neural_engine() { LAB_PIECE_SEC_NEURAL_ENGINE } else { LAB_PIECE_SEC };
+        let pieces = lab_pieces(&processed_samples, &chunks, max_sec);
+        let (app, pk_arc) = (app_handle.clone(), Arc::clone(&parakeet_transcriber));
+        let res = tauri::async_runtime::spawn_blocking(move || {
+            let _transcribing = Transcribing::start();
+            let total = pieces.iter().map(|p| p.len()).sum::<usize>().max(1);
+            let (mut texts, mut inference_ms, mut done) = (Vec::new(), 0, 0);
+            report(&app, "Transcribing", Some(0.0));
+            let res = (|| {
+                for piece in &pieces {
+                    yield_to_dictation(&app, &dictation_phase, done as f32 / total as f32);
+                    let audio = &processed_samples[piece.clone()];
+                    let (text, _, ms, _) = pk_arc.lock().unwrap().transcribe(audio, &[0..audio.len()], &model_dir)?;
+                    texts.push(text);
+                    inference_ms += ms;
+                    done += piece.len();
+                    report(&app, "Transcribing", Some(done as f32 / total as f32));
+                }
+                Ok::<_, String>((crate::chunking::join_transcripts(&texts), "auto".to_string(), inference_ms))
+            })();
             // A lab run frees its model straight away instead of leaving it to the idle cleanup.
-            pk.unload();
+            pk_arc.lock().unwrap().unload();
             res
-        };
+        })
+        .await
+        .map_err(|e| e.to_string())?;
         let total_ms = t0.elapsed().as_millis() as u64;
-        let res = res?;
+        let res: (String, String, u64) = res?;
         // Inference alone; the rest of the run was loading the model.
         let inference_ms = if res.2 > 0 { res.2 } else { total_ms };
         log_lab_run(app_handle, &req.model_name, processed_duration_sec, total_ms, inference_ms);
@@ -497,16 +582,58 @@ pub async fn run_experiment(
         }
         report(app_handle, "Loading the model", None);
         let model_path = Transcriber::ensure_model(app_handle, &req.model_name).await?;
-        let lang_opt = req.language.as_deref();
         let t0 = Instant::now();
-        let res = {
-            let mut tr = transcriber.lock().unwrap();
-            let progress = transcription_progress(app_handle);
-            let res = tr.transcribe_detailed_reporting(&processed_samples, &chunks, &model_path, false, lang_opt, Some(progress));
+        let pieces = lab_pieces(&processed_samples, &chunks, LAB_PIECE_SEC);
+        let (app, tr_arc, language) = (app_handle.clone(), Arc::clone(&transcriber), req.language.clone());
+        let res = tauri::async_runtime::spawn_blocking(move || {
+            let _transcribing = Transcribing::start();
+            let total = pieces.iter().map(|p| p.len()).sum::<usize>().max(1);
+            let mut all = crate::transcribe::DetailedWhisperResult {
+                text: String::new(),
+                detected_lang: "auto".to_string(),
+                inference_ms: 0,
+                thread_count: 0,
+                raw_output: String::new(),
+                segments: Vec::new(),
+            };
+            let (mut texts, mut raw, mut lang, mut done) = (Vec::new(), Vec::new(), language, 0);
+            report(&app, "Transcribing", Some(0.0));
+            let res = (|| {
+                for (i, piece) in pieces.iter().enumerate() {
+                    yield_to_dictation(&app, &dictation_phase, done as f32 / total as f32);
+                    let audio = &processed_samples[piece.clone()];
+                    let r = tr_arc.lock().unwrap().transcribe_detailed(audio, &[0..audio.len()], &model_path, false, lang.as_deref())?;
+                    // Segment times are within the piece; shifted to times in the whole file.
+                    let offset_ms = (piece.start * 1000 / 16000) as i64;
+                    all.segments.extend(r.segments.into_iter().map(|mut s| {
+                        s.start_ms += offset_ms;
+                        s.end_ms += offset_ms;
+                        s
+                    }));
+                    if i == 0 {
+                        all.detected_lang = r.detected_lang.clone();
+                        // Later pieces keep this language, so a long file can't switch midway.
+                        if lang.as_deref().map_or(true, |l| l.trim().is_empty() || l == "auto") && r.detected_lang != "auto" {
+                            lang = Some(r.detected_lang.clone());
+                        }
+                    }
+                    texts.push(r.text);
+                    raw.push(r.raw_output);
+                    all.inference_ms += r.inference_ms;
+                    all.thread_count = r.thread_count;
+                    done += piece.len();
+                    report(&app, "Transcribing", Some(done as f32 / total as f32));
+                }
+                all.text = crate::chunking::join_transcripts(&texts);
+                all.raw_output = raw.join("\n");
+                Ok::<_, String>(all)
+            })();
             // A lab run frees its model straight away instead of leaving it to the idle cleanup.
-            tr.unload();
+            tr_arc.lock().unwrap().unload();
             res
-        };
+        })
+        .await
+        .map_err(|e| e.to_string())?;
         let total_ms = t0.elapsed().as_millis() as u64;
         let res = res?;
         log_lab_run(app_handle, &req.model_name, processed_duration_sec, total_ms, res.inference_ms);
@@ -572,6 +699,23 @@ pub async fn run_experiment(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn lab_pieces_cover_each_chunk_in_order_within_the_limit() {
+        // A 10 s chunk and a 140 s chunk, cut into pieces of at most 60 s.
+        let samples: Vec<f32> = (0..150 * 16000).map(|i| (i as f32 * 0.01).sin() * 0.5).collect();
+        let chunks = vec![0..10 * 16000, 10 * 16000..samples.len()];
+        let pieces = super::lab_pieces(&samples, &chunks, 60);
+        assert_eq!(pieces.first().unwrap().start, 0);
+        assert_eq!(pieces.last().unwrap().end, samples.len());
+        for pair in pieces.windows(2) {
+            assert_eq!(pair[0].end, pair[1].start, "no gaps or overlaps");
+        }
+        assert!(pieces.iter().all(|p| p.len() <= 60 * 16000));
+        // The chunk boundary stays a piece boundary; 140 s needs three pieces.
+        assert_eq!(pieces[0], 0..10 * 16000);
+        assert_eq!(pieces.len(), 4);
+    }
+
     #[test]
     fn decodes_a_stereo_wav_to_mono_at_its_own_rate() {
         let path = std::env::temp_dir().join(format!("bifaria_lab_stereo_{}.wav", std::process::id()));
