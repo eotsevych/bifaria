@@ -73,6 +73,9 @@ pub fn import_model_file(source_path: String) -> Result<crate::transcribe::Model
     if ext != "bin" {
         return Err("Only .bin files are supported (GGML format)".to_string());
     }
+    if let Some(why) = crate::transcribe::not_a_whisper_model(&src) {
+        return Err(format!("This file can't be used as a Whisper model: {why}"));
+    }
     let filename = src.file_name().and_then(|n| n.to_str()).ok_or("Invalid file name")?.to_string();
     let dest = get_models_dir().join(&filename);
 
@@ -221,6 +224,11 @@ pub async fn download_custom_model(app_handle: AppHandle, url: String, file_name
     if meta.len() < 1024 {
         let _ = fs::remove_file(&temp_path);
         return Err("Downloaded file is too small to be a valid model".to_string());
+    }
+
+    if let Some(why) = crate::transcribe::not_a_whisper_model(&temp_path) {
+        let _ = fs::remove_file(&temp_path);
+        return Err(format!("The downloaded file can't be used as a Whisper model: {why}"));
     }
 
     // Ensure .bin extension after sanitization already handled

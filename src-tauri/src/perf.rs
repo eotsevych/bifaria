@@ -413,7 +413,7 @@ impl SystemContext {
 /// memory from free + inactive and reads 0 whenever the compressor is busy, so this uses the kernel's
 /// memory-pressure level instead (the percentage Activity Monitor's pressure graph is based on).
 #[cfg(target_os = "macos")]
-fn available_mem_mb(sys: &System) -> u64 {
+pub(crate) fn available_mem_mb(sys: &System) -> u64 {
     extern "C" {
         fn sysctlbyname(name: *const u8, oldp: *mut std::ffi::c_void, oldlenp: *mut usize, newp: *mut std::ffi::c_void, newlen: usize) -> i32;
     }
@@ -430,7 +430,7 @@ fn available_mem_mb(sys: &System) -> u64 {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn available_mem_mb(sys: &System) -> u64 {
+pub(crate) fn available_mem_mb(sys: &System) -> u64 {
     sys.available_memory() / (1024 * 1024)
 }
 

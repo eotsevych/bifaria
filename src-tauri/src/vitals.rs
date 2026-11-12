@@ -31,7 +31,7 @@ pub fn process_rss_mb() -> u64 {
 pub fn available_memory_mb() -> u64 {
     let mut sys = System::new();
     sys.refresh_memory();
-    sys.available_memory() / (1024 * 1024)
+    crate::perf::available_mem_mb(&sys)
 }
 
 impl SystemVitals {
@@ -52,7 +52,8 @@ impl SystemVitals {
         let total_memory_mb = sys.total_memory() / (1024 * 1024);
         let used_memory_mb = sys.used_memory() / (1024 * 1024);
         let free_memory_mb = sys.free_memory() / (1024 * 1024);
-        let available_memory_mb = sys.available_memory() / (1024 * 1024);
+        // sysinfo's figure reads 0 on macOS whenever the compressor is busy (see perf).
+        let available_memory_mb = crate::perf::available_mem_mb(&sys);
 
         let pid = sysinfo::get_current_pid().ok();
         let process_rss_mb = pid

@@ -54,6 +54,29 @@ pub const AVAILABLE_MODELS: &[(&str, &str, &str, &str, &str)] = &[
     ),
 ];
 
+/// Why the file at `path` can't be a Whisper model, or None if its header looks like one. Whisper
+/// files start with the GGML magic and hyperparameters, and every Whisper model has 1500 audio
+/// frames and a vocabulary of ~51,865 tokens; other GGML models (e.g. a converted Parakeet) don't.
+pub fn not_a_whisper_model(path: &Path) -> Option<String> {
+    let mut header = [0u8; 12];
+    let read = fs::File::open(path).and_then(|mut f| std::io::Read::read_exact(&mut f, &mut header));
+    if read.is_err() {
+        return Some("the file is too short to be a model".to_string());
+    }
+    let field = |i: usize| u32::from_le_bytes(header[i..i + 4].try_into().unwrap());
+    if &header[0..4] == b"GGUF" {
+        return Some("it's a GGUF file; Whisper models for Bifaria are GGML .bin files".to_string());
+    }
+    if field(0) != 0x6767_6d6c {
+        return Some("it isn't a GGML model file".to_string());
+    }
+    let (n_vocab, n_audio_ctx) = (field(4), field(8));
+    if n_audio_ctx != 1500 || !(51_864..=51_866).contains(&n_vocab) {
+        return Some(format!("it's a GGML model, but not Whisper (vocabulary {n_vocab}, audio frames {n_audio_ctx})"));
+    }
+    None
+}
+
 pub fn get_models_dir() -> PathBuf {
     let dir = get_data_dir().join("models");
     if !dir.exists() {
@@ -140,6 +163,10 @@ pub fn get_model_catalog() -> Vec<ModelCatalogItem> {
                 continue;
             }
             if known.contains(&fname) {
+                continue;
+            }
+            // Only files Whisper can load: another GGML model would fail every dictation.
+            if not_a_whisper_model(&path).is_some() {
                 continue;
             }
             // Must be at least 1 MB to be considered a valid model
@@ -384,7 +411,10 @@ impl Transcriber {
         let rss_before = crate::vitals::process_rss_mb();
         let started = Instant::now();
         let ctx = WhisperContext::new_with_params(path_str, cparams)
-            .map_err(|e| format!("Failed to load Whisper model: {:?}", e))?;
+            .map_err(|e| match not_a_whisper_model(model_path) {
+                Some(why) => format!("This model can't be used: {why}. Pick another in Settings › Transcription"),
+                None => format!("Failed to load Whisper model: {:?}", e),
+            })?;
 
         self.context = Some(ctx);
         self.current_model = path_str.to_string();
@@ -578,6 +608,24 @@ pub fn strip_special_tokens(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn tells_whisper_models_from_other_files() {
+        let dir = std::env::temp_dir().join(format!("bifaria_model_check_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = |name: &str, bytes: &[u8]| {
+            let p = dir.join(name);
+            std::fs::write(&p, bytes).unwrap();
+            p
+        };
+        let header = |vocab: u32, ctx: u32| [0x6767_6d6cu32, vocab, ctx, 1024].iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+        assert_eq!(super::not_a_whisper_model(&file("whisper.bin", &header(51865, 1500))), None);
+        // The file from the report: a GGML-style Parakeet conversion.
+        assert!(super::not_a_whisper_model(&file("parakeet.bin", &header(8192, 5000))).unwrap().contains("not Whisper"));
+        assert!(super::not_a_whisper_model(&file("model.gguf", b"GGUF\x03\0\0\0\0\0\0\0")).unwrap().contains("GGUF"));
+        assert!(super::not_a_whisper_model(&file("short.bin", b"lm")).is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Lists this computer's GPUs: `cargo test --lib gpu_devices -- --ignored --nocapture`. Ignored
     /// because CI runners have no GPU.
     #[test]
