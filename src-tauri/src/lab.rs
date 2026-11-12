@@ -368,6 +368,27 @@ pub fn keep_both_models(loading: &str) -> bool {
     is_transcribing() && room_for_two_models(loading)
 }
 
+static RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Holds Audio Lab's single run slot until dropped. Runs take the model piece by piece, so two at
+/// once would interleave and each take twice as long.
+struct OneRun;
+
+impl OneRun {
+    fn claim() -> Result<Self, String> {
+        RUNNING
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .map(|_| OneRun)
+            .map_err(|_| "Audio Lab is already transcribing a file. Wait for it to finish, then run again.".to_string())
+    }
+}
+
+impl Drop for OneRun {
+    fn drop(&mut self) {
+        RUNNING.store(false, Ordering::SeqCst);
+    }
+}
+
 /// A dictation is being recorded, transcribed or translated.
 fn dictation_active(phase: &Mutex<AssistantPhase>) -> bool {
     matches!(
@@ -415,6 +436,7 @@ pub async fn run_experiment(
     keep_loaded: bool,
     req: LabExperimentRequest,
 ) -> Result<LabExperimentResult, String> {
+    let _one_run = OneRun::claim()?;
     let data_dir = get_data_dir();
 
     // Resolve audio file path
@@ -727,6 +749,14 @@ pub async fn run_experiment(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_one_audio_lab_run_at_a_time() {
+        let first = super::OneRun::claim().expect("the first run starts");
+        assert!(super::OneRun::claim().is_err(), "a second run is refused while the first holds the slot");
+        drop(first);
+        assert!(super::OneRun::claim().is_ok(), "the slot is free again once the first run ends");
+    }
+
     #[test]
     fn lab_pieces_cover_each_chunk_in_order_within_the_limit() {
         // A 10 s chunk and a 140 s chunk, cut into pieces of at most 60 s.
