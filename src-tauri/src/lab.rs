@@ -344,18 +344,28 @@ impl Drop for Transcribing {
     }
 }
 
-/// Free memory needed to keep a second speech model loaded; the largest Whisper model is ~1.6 GB.
-const TWO_MODELS_MIN_FREE_MB: u64 = 3072;
+/// Free memory left over after loading a second speech model, for the system, other apps and the
+/// model's working memory while it runs (~0.6 GB for Parakeet on a 60 s piece).
+const TWO_MODELS_MARGIN_MB: u64 = 1024;
 
-/// Whether there's room for a second speech model next to the one in use.
-pub fn room_for_two_models() -> bool {
-    crate::vitals::available_memory_mb() >= TWO_MODELS_MIN_FREE_MB
+/// Memory a speech model takes once loaded, in MB: about its size on disk (Parakeet's 670 MB took
+/// ~670 MB in a user's log). An unknown one counts as 1 GB.
+fn model_size_mb(model_name: &str) -> u64 {
+    crate::transcribe::get_model_catalog()
+        .into_iter()
+        .find(|m| m.filename == model_name)
+        .map_or(1024, |m| m.file_size_bytes / (1024 * 1024))
 }
 
-/// Whether a dictation may keep Audio Lab's model loaded while it uses the other one, so Audio Lab
+/// Whether `loading` fits in memory next to the speech model already loaded.
+pub fn room_for_two_models(loading: &str) -> bool {
+    crate::vitals::available_memory_mb() >= model_size_mb(loading) + TWO_MODELS_MARGIN_MB
+}
+
+/// Whether a dictation loading `loading` may keep Audio Lab's other model loaded, so Audio Lab
 /// doesn't reload it afterwards. Otherwise, as always, one speech model at a time.
-pub fn keep_both_models() -> bool {
-    is_transcribing() && room_for_two_models()
+pub fn keep_both_models(loading: &str) -> bool {
+    is_transcribing() && room_for_two_models(loading)
 }
 
 /// A dictation is being recorded, transcribed or translated.
@@ -489,7 +499,7 @@ pub async fn run_experiment(
 
     if is_parakeet {
         // One model at a time, unless there's room to keep the other (the dictation's) loaded too.
-        if !room_for_two_models() {
+        if !room_for_two_models(&req.model_name) {
             transcriber.lock().unwrap().unload();
         }
         report(app_handle, "Loading the model", None);
@@ -593,7 +603,7 @@ pub async fn run_experiment(
         })
     } else {
         // One model at a time, unless there's room to keep the other (the dictation's) loaded too.
-        if !room_for_two_models() {
+        if !room_for_two_models(&req.model_name) {
             parakeet_transcriber.lock().unwrap().unload();
         }
         report(app_handle, "Loading the model", None);

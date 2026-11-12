@@ -1996,7 +1996,7 @@ impl AppController {
             let is_parakeet = model_name == crate::model_download::PARAKEET_MODEL;
             if is_parakeet {
                 // One model at a time, unless Audio Lab is using the other and there's room for both.
-                if !crate::lab::keep_both_models() {
+                if !crate::lab::keep_both_models(&model_name) {
                     transcriber_cl.lock().unwrap().unload();
                 }
                 if let Ok(dir) = crate::parakeet::ParakeetTranscriber::ensure_model(&app_handle_cl).await {
@@ -2014,7 +2014,7 @@ impl AppController {
                 }
             } else {
                 // One model at a time, unless Audio Lab is using the other and there's room for both.
-                if !crate::lab::keep_both_models() {
+                if !crate::lab::keep_both_models(&model_name) {
                     parakeet_cl.lock().unwrap().unload();
                 }
                 if let Ok(path) = crate::transcribe::Transcriber::ensure_model(&app_handle_cl, &model_name).await {
@@ -2195,7 +2195,7 @@ impl AppController {
             // Step 2 & 3: Model inference
             let (raw_text, detected_lang, whisper_inference_ms, thread_count, whisper_raw_output, segments_count) = if is_parakeet {
                 // One model at a time, unless Audio Lab is using the other and there's room for both.
-                if !crate::lab::keep_both_models() {
+                if !crate::lab::keep_both_models(&settings.model_name) {
                     transcriber_arc.lock().unwrap().unload();
                 }
                 log_stage_event(&data_dir, "PARAKEET_START", &format!("Starting Parakeet TDT inference on {} samples ({:.2} s)...", vad_res.samples.len(), vad_res.trimmed_duration_sec));
@@ -2272,7 +2272,7 @@ impl AppController {
                 }
             } else {
                 // One model at a time, unless Audio Lab is using the other and there's room for both.
-                if !crate::lab::keep_both_models() {
+                if !crate::lab::keep_both_models(&settings.model_name) {
                     parakeet_arc.lock().unwrap().unload();
                 }
                 let model_path = match ensure_model_for_recording(&app_handle, &settings.model_name, &transcribing_subtitle).await {
