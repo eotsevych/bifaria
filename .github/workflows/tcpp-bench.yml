@@ -1,0 +1,71 @@
+name: transcribe-cpp benchmark (spike)
+
+# Builds tools/tcpp-bench for Windows x64 (Vulkan + per-CPU modules, as Handy ships it) and uploads a
+# zip a tester runs with run-bench.ps1. Manual only; not part of the app or its releases.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    # ggml's Vulkan build nests deep CMake folders past Windows' 260-character path limit.
+    env:
+      CARGO_TARGET_DIR: C:\t
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Same SDK version as the release workflow.
+      - name: Install Vulkan SDK
+        shell: pwsh
+        env:
+          VULKAN_VERSION: 1.4.313.2
+        run: |
+          curl.exe -o "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" -L "https://sdk.lunarg.com/sdk/download/$env:VULKAN_VERSION/windows/vulkansdk-windows-X64-$env:VULKAN_VERSION.exe"
+          & "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" --accept-licenses --default-answer --confirm-command install
+          $sdk = "C:\VulkanSDK\$env:VULKAN_VERSION"
+          if (-not (Test-Path "$sdk\Lib\vulkan-1.lib")) { throw "Vulkan SDK not installed at $sdk" }
+          Add-Content $env:GITHUB_ENV "VULKAN_SDK=$sdk"
+          Add-Content $env:GITHUB_PATH "$sdk\Bin"
+
+      - name: Build and test
+        shell: pwsh
+        run: |
+          cargo test --release --manifest-path tools/tcpp-bench/Cargo.toml
+          cargo build --release --manifest-path tools/tcpp-bench/Cargo.toml
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pkg = "tcpp-bench-windows"
+          New-Item -ItemType Directory $pkg | Out-Null
+          Copy-Item C:\t\release\tcpp-bench.exe $pkg
+          Copy-Item tools\tcpp-bench\run-bench.ps1 $pkg
+          $libs = Get-ChildItem tools\tcpp-bench\runtime-libs -Filter *.dll
+          if (-not ($libs | Where-Object Name -like 'ggml-vulkan*')) { throw "no ggml-vulkan module was built" }
+          if (-not ($libs | Where-Object Name -like 'ggml-cpu*')) { throw "no ggml-cpu modules were built" }
+          $libs | Copy-Item -Destination $pkg
+          # The Vulkan loader, for PCs whose GPU driver didn't install one (the CPU still works there).
+          Copy-Item "$env:VULKAN_SDK\Bin\vulkan-1.dll" $pkg -ErrorAction SilentlyContinue
+          # The VC++ runtime and OpenMP, app-local, as Handy ships them.
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -property installationPath
+          $ver = (Get-Content (Join-Path $vs "VC\Auxiliary\Build\Microsoft.VCRedistVersion.default.txt")).Trim()
+          $redist = Join-Path $vs "VC\Redist\MSVC\$ver\x64"
+          foreach ($pattern in @("Microsoft.VC*.CRT", "Microsoft.VC*.OpenMP")) {
+            $dir = Get-ChildItem $redist -Directory -Filter $pattern | Sort-Object Name | Select-Object -Last 1
+            if (-not $dir) { throw "$pattern not found under $redist" }
+            Get-ChildItem $dir.FullName -Filter *.dll | Copy-Item -Destination $pkg
+          }
+          Get-ChildItem $pkg | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tcpp-bench-windows
+          path: tcpp-bench-windows
+          if-no-files-found: error

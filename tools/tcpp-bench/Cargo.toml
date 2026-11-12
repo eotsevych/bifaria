@@ -1,0 +1,22 @@
+# Spike: how fast transcribe-cpp (Handy's engine) runs Parakeet on a tester's PC, on the GPU
+# (Vulkan) and the CPU, compared with Bifaria's ONNX Parakeet. Not part of the app: it has its own
+# build so transcribe-cpp's ggml doesn't meet whisper-rs's copy.
+[package]
+name = "tcpp-bench"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+symphonia = { version = "0.5", features = ["aac", "alac", "isomp4", "mp3", "aiff"] }
+
+# As Handy ships it: Vulkan on Windows and Linux x64, with the CPU code as per-ISA modules picked at
+# run time, so a build made on CI's CPU still runs on the tester's.
+[target.'cfg(all(any(windows, target_os = "linux"), target_arch = "x86_64"))'.dependencies]
+transcribe-cpp = { version = "=0.4.2", default-features = false, features = ["dynamic-backends", "vulkan"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+transcribe-cpp = { version = "=0.4.2", default-features = false, features = ["metal"] }
+
+[profile.release]
+debug = false
