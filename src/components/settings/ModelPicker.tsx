@@ -59,6 +59,16 @@ function languagesLabel(codes: string[]): string {
   return `${codes.length} languages`;
 }
 
+/** At most `lines` lines of text, cut with "…". */
+function clamp(lines: number): React.CSSProperties {
+  return {
+    display: "-webkit-box",
+    WebkitLineClamp: lines,
+    WebkitBoxOrient: "vertical",
+    overflow: "hidden",
+  };
+}
+
 /** Every word of the query appears in the model's name, family, languages or labels. */
 function matches(m: ModelCatalogItem, query: string): boolean {
   const haystack = [
@@ -349,11 +359,6 @@ export default function ModelPicker({
                       data-index={i}
                       onMouseEnter={() => setActive(i)}
                       onClick={() => choose(m)}
-                      title={
-                        m.languages.length > 2
-                          ? m.languages.map(languageName).join(", ")
-                          : undefined
-                      }
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -393,7 +398,7 @@ export default function ModelPicker({
                             whiteSpace: "nowrap",
                           }}
                         >
-                          {[languages, m.size_desc, m.speed_desc].filter(Boolean).join(" · ")}
+                          {[languages, m.size_desc].filter(Boolean).join(" · ")}
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}>
@@ -405,6 +410,30 @@ export default function ModelPicker({
                 );
               })}
             </div>
+            {/* The highlighted model in full: what it is and every language it knows. */}
+            {visible[active] && (
+              <div
+                aria-live="polite"
+                style={{
+                  flexShrink: 0,
+                  padding: "8px 12px",
+                  borderTop: `1px solid ${t.border}`,
+                  fontSize: 11,
+                  lineHeight: "15px",
+                }}
+              >
+                {visible[active].speed_desc && (
+                  <div style={{ ...clamp(2), color: t.text }}>{visible[active].speed_desc}</div>
+                )}
+                {visible[active].languages.length > 2 && (
+                  <div style={{ ...clamp(2), color: t.textDim, marginTop: 2 }}>
+                    {visible[active].languages.length > 30
+                      ? `${visible[active].languages.length} languages`
+                      : visible[active].languages.map(languageName).join(", ")}
+                  </div>
+                )}
+              </div>
+            )}
             {!query && hidden > 0 && (
               <button
                 type="button"

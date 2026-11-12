@@ -608,8 +608,118 @@ export async function triggerClearTranscriptionLogs(): Promise<boolean> {
   }
 }
 
+/** A few models for previewing Settings in a browser (`bun run dev`, #preferences). */
+const PREVIEW_MODELS: ModelCatalogItem[] = (
+  [
+    [
+      "ggml-base.bin",
+      "Whisper Base",
+      "142 MB",
+      "Ultra Fast (~150-250 ms)",
+      "whisper",
+      ["en", "uk", "de", "fr", "es", "pl", "ru", "it", "ja", "zh"],
+      ["GPU"],
+      true,
+      true,
+    ],
+    [
+      "parakeet-tdt-0.6b-v3",
+      "Parakeet TDT 0.6B v3",
+      "480 MB",
+      "Real-Time (~80-150 ms, 25 langs)",
+      "parakeet",
+      [
+        "bg",
+        "hr",
+        "cs",
+        "da",
+        "nl",
+        "en",
+        "et",
+        "fi",
+        "fr",
+        "de",
+        "el",
+        "hu",
+        "it",
+        "lv",
+        "lt",
+        "mt",
+        "pl",
+        "pt",
+        "ro",
+        "sk",
+        "sl",
+        "es",
+        "sv",
+        "ru",
+        "uk",
+      ],
+      ["Neural Engine", "GPU"],
+      true,
+      true,
+    ],
+    [
+      "parakeet-ultra",
+      "Parakeet Ultra",
+      "480 MB",
+      "Most accurate Parakeet, same speed (25 langs)",
+      "parakeet",
+      ["en", "uk", "ru", "de", "fr"],
+      ["Neural Engine", "GPU"],
+      false,
+      true,
+    ],
+    [
+      "canary-1b-v2",
+      "Canary 1B v2",
+      "1.1 GB",
+      "978M · Multilingual with translation",
+      "canary",
+      ["en", "de", "fr", "es", "uk", "pl"],
+      ["GPU", "Translate"],
+      false,
+      true,
+    ],
+    [
+      "moonshine-tiny-uk",
+      "Moonshine Tiny Ukrainian",
+      "35 MB",
+      "27M · Ukrainian only",
+      "moonshine",
+      ["uk"],
+      ["GPU"],
+      false,
+      false,
+    ],
+    [
+      "Qwen3-ASR-0.6B",
+      "Qwen3-ASR 0.6B",
+      "850 MB",
+      "0.6B · 30 languages with detection",
+      "qwen3_asr",
+      ["en", "zh", "uk", "ru", "de"],
+      ["GPU"],
+      false,
+      true,
+    ],
+  ] as const
+).map(([filename, name, size_desc, speed_desc, family, languages, tags, downloaded, curated]) => ({
+  id: filename,
+  filename,
+  name,
+  size_desc,
+  speed_desc,
+  family,
+  languages: [...languages],
+  tags: [...tags],
+  downloaded,
+  curated,
+  file_size_bytes: 0,
+}));
+
 export async function fetchAvailableModels(): Promise<ModelCatalogItem[]> {
-  if (!isTauri()) return [];
+  if (!isTauri()) return PREVIEW_MODELS;
   try {
     return await invoke<ModelCatalogItem[]>("get_available_models");
   } catch (err) {
