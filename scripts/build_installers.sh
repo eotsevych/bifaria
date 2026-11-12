@@ -55,6 +55,8 @@ fi
 # 3. Build x86_64 release binary (Intel)
 echo "--> 3. Building Intel (x86_64) release binary..."
 cd "$ROOT_DIR/src-tauri"
+# ort-sys links the ONNX Runtime dylib into these; a restored CI cache can lack them.
+mkdir -p target/x86_64-apple-darwin/release/examples target/x86_64-apple-darwin/release/deps
 MACOSX_DEPLOYMENT_TARGET=11.0 \
 ORT_LIB_LOCATION="$ONNX_DIR" \
 ORT_PREFER_DYNAMIC_LINK=1 \

@@ -9,8 +9,10 @@ engine="$root/src-tauri/engine"
 out="$root/src-tauri/engine-bundle"
 target="${ENGINE_TARGET_DIR:-$engine/target}"
 
-cargo test --release --manifest-path "$engine/Cargo.toml" --target-dir "$target"
 cargo build --release --manifest-path "$engine/Cargo.toml" --target-dir "$target"
+# The tests load transcribe-cpp's libraries, which the build copied to runtime-libs.
+PATH="$engine/runtime-libs:$PATH" LD_LIBRARY_PATH="$engine/runtime-libs:${LD_LIBRARY_PATH:-}" \
+  cargo test --release --manifest-path "$engine/Cargo.toml" --target-dir "$target"
 
 exe=bifaria-asr
 [[ "${OS:-}" == Windows_NT ]] && exe=bifaria-asr.exe
