@@ -227,7 +227,7 @@ static ENGINE_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 pub fn set_engine_dir(dir: PathBuf) {
     let _ = ENGINE_DIR.set(dir);
     // Asking OpenVINO for its devices takes a moment; do it now, not when Settings opens.
-    if engine_helper().is_some() {
+    if !cfg!(target_os = "macos") && engine_helper().is_some() {
         std::thread::spawn(openvino_devices);
     }
 }
@@ -300,7 +300,7 @@ pub fn devices(model_name: &str) -> Vec<(&'static str, String)> {
         }
         out.push(("ggml", "CPU · ggml".to_string()));
     }
-    if v.ov.is_some() && engine_helper().is_some() {
+    if v.ov.is_some() && !cfg!(target_os = "macos") && engine_helper().is_some() {
         // Intel's runtime: its GPU (the first one), NPU and CPU, as far as this computer has them.
         for (value, kind) in [("ov-gpu", "GPU"), ("ov-npu", "NPU"), ("ov-cpu", "CPU")] {
             if let Some((_, name)) = openvino_devices().iter().find(|(id, _)| id == kind || id.starts_with(&format!("{kind}."))) {
