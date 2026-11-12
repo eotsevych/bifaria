@@ -1,9 +1,9 @@
-//! bifaria-asr (Windows, Linux): transcribes speech for Bifaria with transcribe-cpp on the GPU
-//! (Vulkan) or the CPU, or with OpenVINO (eddy) on an Intel GPU, NPU or the CPU. Same protocol as
-//! the Swift helper on the Mac: one JSON request per line on stdin, one JSON answer per line on
-//! stdout, in order.
+//! bifaria-engine: transcribes speech for Bifaria with transcribe-cpp on the GPU (Metal on a Mac,
+//! Vulkan elsewhere) or the CPU; on Windows/Linux also with OpenVINO (eddy) on an Intel GPU, NPU or
+//! CPU, and Parakeet's ONNX build on DirectML (Windows). Same protocol as the Swift helper
+//! (bifaria-asr): one JSON request per line on stdin, one JSON answer per line on stdout, in order.
 //!
-//!   {"op":"load","dir":"<folder with one .gguf>","units":"vulkan"|"cpu"} → {"ok":true,"ms":…,"device":…}
+//!   {"op":"load","dir":"<folder with one .gguf>","units":"gpu"|"cpu"} → {"ok":true,"ms":…,"device":…}
 //!   {"op":"load","dir":"<OpenVINO Parakeet v3 folder>","units":"openvino:GPU|NPU|CPU"} → the same
 //!   {"op":"load","dir":"<ONNX Parakeet v3 folder>","units":"directml"} → the same (Windows)
 //!   {"op":"transcribe","audio":"<base64 of 16 kHz mono f32 little-endian>"} → {"ok":true,"text":…,"ms":…}
@@ -58,12 +58,13 @@ fn handle(request: &Value, loaded: &mut Option<Loaded>) -> Value {
     match request["op"].as_str() {
         Some("load") => {
             let Some(dir) = request["dir"].as_str() else { return failure("bad_request", "\"load\" needs \"dir\"") };
-            let units = request["units"].as_str().unwrap_or("vulkan");
+            let units = request["units"].as_str().unwrap_or("gpu");
             let backend = match units {
-                "vulkan" => Some(Backend::Vulkan),
+                "gpu" | "vulkan" if cfg!(target_os = "macos") => Some(Backend::Metal),
+                "gpu" | "vulkan" => Some(Backend::Vulkan),
                 "cpu" => Some(Backend::Cpu),
                 _ if units.starts_with("openvino:") || (cfg!(windows) && units == "directml") => None,
-                other => return failure("bad_request", &format!("Unknown \"units\" {other}; use vulkan, cpu, directml or openvino:<device>")),
+                other => return failure("bad_request", &format!("Unknown \"units\" {other}; use gpu, cpu, directml or openvino:<device>")),
             };
             // One model at a time: the old one goes before the new one loads.
             *loaded = None;

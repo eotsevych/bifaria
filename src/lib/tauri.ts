@@ -59,8 +59,8 @@ export interface BackendSettings {
   apple_translation_model?: "fast" | "quality";
   /** Where Whisper runs: "auto" (the GPU when there is one) or "cpu". */
   device_backend?: string;
-  /** Where Parakeet runs on a Mac: "ane" (Neural Engine), "gpu" or "cpu". */
-  parakeet_device?: string;
+  /** Where each Parakeet or catalog model runs, by model name (Settings → Runs on). */
+  model_devices?: Record<string, string>;
   audio_chunking?: boolean;
   noise_reduction?: NoiseReduction;
   mask_confidential?: boolean;
@@ -99,7 +99,7 @@ export interface HardwareProfile {
 
 /** Where a model can run on this computer; the choice is saved in `setting` (one per model family). */
 export interface ModelDevices {
-  setting: "device_backend" | "parakeet_device";
+  setting: "device_backend" | "model_devices";
   options: { value: string; label: string }[];
   hint: string;
 }
@@ -116,9 +116,9 @@ export async function fetchModelDevices(modelName: string): Promise<ModelDevices
           hint: "Whisper is fastest on the GPU",
         }
       : {
-          setting: "parakeet_device",
+          setting: "model_devices",
           options: [
-            { value: "ane", label: "Neural Engine (recommended)" },
+            { value: "ane", label: "Neural Engine · Core ML (recommended)" },
             { value: "gpu", label: "GPU" },
             { value: "cpu", label: "CPU" },
           ],
@@ -577,6 +577,14 @@ export interface ModelCatalogItem {
   filename: string;
   downloaded: boolean;
   file_size_bytes: number;
+  /** "whisper", "parakeet", "canary", … or "custom". */
+  family: string;
+  /** Language codes it transcribes ("en", "uk", …). */
+  languages: string[];
+  /** "Neural Engine", "GPU", "NPU", "Translate". */
+  tags: string[];
+  /** Shown without "Show all models". */
+  curated: boolean;
 }
 
 export async function fetchTranscriptionLogs(limit = 50): Promise<TranscriptionDiagnosticLog[]> {

@@ -536,7 +536,7 @@ async fn get_model_devices(model_name: String) -> ModelDevices {
         (false, _) => "Whisper is fastest on the GPU; pick CPU if the GPU misbehaves".to_string(),
     };
     ModelDevices {
-        setting: if parakeet { "parakeet_device" } else { "device_backend" },
+        setting: if parakeet { "model_devices" } else { "device_backend" },
         options: options.into_iter().map(|(value, label)| DeviceOption { value, label }).collect(),
         hint,
     }

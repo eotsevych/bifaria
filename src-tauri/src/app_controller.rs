@@ -994,7 +994,7 @@ impl AppController {
     pub fn new(app_handle: AppHandle) -> Result<Self, String> {
         let settings = AppSettings::load();
         crate::transcribe::set_device_backend(&settings.device_backend);
-        crate::parakeet::set_device(&settings.parakeet_device);
+        crate::parakeet::set_devices(&settings.model_devices);
         crate::pipeline_logger::set_private(crate::settings::is_private(&settings.storage_mode));
         let history = Arc::new(HistoryManager::new()?);
 
@@ -1166,7 +1166,7 @@ impl AppController {
             (
                 s.model_name.clone(),
                 s.input_device != new_settings.input_device || s.output_device != new_settings.output_device,
-                s.parakeet_device != new_settings.parakeet_device,
+                s.model_devices != new_settings.model_devices,
             )
         };
         new_settings.save()?;
@@ -1176,7 +1176,7 @@ impl AppController {
         }
         // A loaded Whisper model is moved to or off the GPU when it is next used.
         crate::transcribe::set_device_backend(&new_settings.device_backend);
-        crate::parakeet::set_device(&new_settings.parakeet_device);
+        crate::parakeet::set_devices(&new_settings.model_devices);
         if parakeet_moved {
             // Core ML picks the device when the model loads; the next dictation loads it there.
             // Off the UI thread: a dictation or Audio Lab run may hold the model for minutes.

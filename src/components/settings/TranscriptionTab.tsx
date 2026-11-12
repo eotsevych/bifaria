@@ -4,6 +4,7 @@ import { errorMessage } from "@/lib/utils";
 import Toggle from "@/components/ui/Toggle";
 import Segmented from "@/components/ui/Segmented";
 import { Section, Row, FieldSelect, FieldInput, Disclosure } from "./SettingsPrimitives";
+import ModelPicker from "./ModelPicker";
 import { useSettingsContext } from "./useSettingsContext";
 import {
   triggerDownloadSpecificModel,
@@ -94,25 +95,18 @@ export default function TranscriptionTab({ t }: { t: Tokens }) {
       current = false;
     };
   }, [settings.model_name]);
+  // Whisper keeps one choice for all its models; the others remember one per model.
+  const savedDevice =
+    devices?.setting === "model_devices"
+      ? settings.model_devices?.[settings.model_name]
+      : settings.device_backend;
   const deviceValue = devices
-    ? (devices.options.find((o) => o.value === settings[devices.setting]) ?? devices.options[0])
-        ?.value
+    ? (devices.options.find((o) => o.value === savedDevice) ?? devices.options[0])?.value
     : undefined;
-
-  const modelOptions =
-    models.length > 0
-      ? models.map((m) => ({
-          value: m.filename,
-          label: m.downloaded
-            ? `${m.name} — ${m.size_desc}`
-            : `${m.name} — ${m.size_desc} (Needs download)`,
-        }))
-      : [
-          { value: "ggml-medium-q5_0.bin", label: "Whisper Medium (q5_0 local)" },
-          { value: "ggml-small-q5_0.bin", label: "Whisper Small (q5_0 local)" },
-          { value: "ggml-base.bin", label: "Whisper Base (local)" },
-          { value: "parakeet-tdt-0.6b-v3", label: "Parakeet TDT 0.6B (Fast, 25 languages)" },
-        ];
+  const saveDevice = (v: string) =>
+    devices?.setting === "model_devices"
+      ? updateSettings({ model_devices: { ...settings.model_devices, [settings.model_name]: v } })
+      : updateSettings({ device_backend: v });
 
   const idleSec = settings.model_idle_unload_sec ?? DEFAULT_IDLE_SEC;
   const selectedModel = models.find((m) => m.filename === settings.model_name);
@@ -129,10 +123,10 @@ export default function TranscriptionTab({ t }: { t: Tokens }) {
           last={false}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <FieldSelect
+            <ModelPicker
+              models={models}
               value={settings.model_name}
-              onChange={(v) => updateSettings({ model_name: v })}
-              options={modelOptions}
+              onChange={(v) => void updateSettings({ model_name: v })}
               t={t}
             />
             {!isSelectedModelDownloaded && !downloadProgress && (
@@ -164,7 +158,7 @@ export default function TranscriptionTab({ t }: { t: Tokens }) {
               <FieldSelect
                 value={deviceValue}
                 // Another device can need other model files (e.g. GGUF for Vulkan): show if they're downloaded.
-                onChange={(v) => void updateSettings({ [devices.setting]: v }).then(refreshModels)}
+                onChange={(v) => void saveDevice(v).then(refreshModels)}
                 options={devices.options}
                 t={t}
               />

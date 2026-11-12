@@ -13,8 +13,8 @@ target="${ENGINE_TARGET_DIR:-$engine/target}"
 mkdir -p "$target"/release/{examples,deps} "$target"/release/build/{examples,deps}
 cargo build --release --manifest-path "$engine/Cargo.toml" --target-dir "$target"
 
-exe=bifaria-asr
-[[ "${OS:-}" == Windows_NT ]] && exe=bifaria-asr.exe
+exe=bifaria-engine
+[[ "${OS:-}" == Windows_NT ]] && exe=bifaria-engine.exe
 rm -rf "$out"
 mkdir -p "$out"
 cp "$target/release/$exe" "$out/"

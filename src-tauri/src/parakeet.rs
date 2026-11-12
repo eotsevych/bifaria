@@ -175,24 +175,19 @@ const PHONON2_ANE: ModelFiles = ModelFiles {
 /// The helper that runs the Neural Engine build, bundled next to the Bifaria executable.
 const ANE_HELPER: &str = "bifaria-asr";
 
-/// Where Parakeet runs (Settings → Runs on). Mac: the Core ML build on "ane", "gpu" or "cpu".
-/// Windows/Linux: the ONNX build on "cpu" or "directml" (Windows), or the GGUF build in the
-/// transcribe-cpp helper on "vulkan" or "ggml" (its CPU code). See `device_for`.
-static DEVICE: std::sync::Mutex<&'static str> = std::sync::Mutex::new("ane");
+/// The transcribe-cpp helper (src-tauri/engine): GGUF models everywhere, OpenVINO and DirectML on
+/// Windows/Linux.
+const ENGINE_HELPER: &str = "bifaria-engine";
 
-/// Sets where the next load runs; the caller unloads a model loaded elsewhere.
-pub fn set_device(device: &str) {
-    *DEVICE.lock().unwrap() = match device {
-        "gpu" => "gpu",
-        "cpu" => "cpu",
-        "directml" => "directml",
-        "vulkan" => "vulkan",
-        "ggml" => "ggml",
-        "ov-gpu" => "ov-gpu",
-        "ov-npu" => "ov-npu",
-        "ov-cpu" => "ov-cpu",
-        _ => "ane",
-    };
+/// Where each model runs (Settings → Runs on), by model name. Mac: the Core ML build on "ane",
+/// "gpu" or "cpu". Windows/Linux: the ONNX build on "cpu" or "directml" (Windows). Anywhere the
+/// helper runs: the GGUF build on "ggml-gpu" (Metal, Vulkan) or "ggml" (CPU), the OpenVINO build
+/// on "ov-gpu", "ov-npu" or "ov-cpu". See `device_for`.
+static DEVICES: std::sync::Mutex<std::collections::BTreeMap<String, String>> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+/// Sets where models run from now on; the caller unloads a model loaded elsewhere.
+pub fn set_devices(devices: &std::collections::BTreeMap<String, String>) {
+    *DEVICES.lock().unwrap() = devices.clone();
 }
 
 /// OpenVINO's devices as (id, name), asked from the helper once; empty without OpenVINO.
@@ -237,24 +232,27 @@ pub fn set_engine_dir(dir: PathBuf) {
     }
 }
 
-/// The transcribe-cpp helper (src-tauri/engine) on Windows and Linux, when bundled.
+/// The transcribe-cpp helper (src-tauri/engine), when bundled: next to Bifaria on a Mac with Apple
+/// silicon (a sidecar), in resources/engine on Windows and Linux.
 fn engine_helper() -> Option<PathBuf> {
-    if cfg!(target_os = "macos") {
-        return None;
-    }
-    let path = ENGINE_DIR.get()?.join(if cfg!(windows) { "bifaria-asr.exe" } else { "bifaria-asr" });
-    path.exists().then_some(path)
+    let path = if cfg!(target_os = "macos") {
+        if !cfg!(target_arch = "aarch64") {
+            return None;
+        }
+        std::env::current_exe().ok()?.parent()?.join(ENGINE_HELPER)
+    } else {
+        ENGINE_DIR.get()?.join(if cfg!(windows) { format!("{ENGINE_HELPER}.exe") } else { ENGINE_HELPER.to_string() })
+    };
+    // A build without it ships a stand-in script (see build.rs).
+    let head = fs::read(&path).ok()?;
+    (!head.starts_with(b"#!")).then_some(path)
 }
 
 /// The device `v` runs on: the one picked in Settings if it can run there, else its first option.
 fn device_for(v: &Variant) -> &'static str {
-    let wanted = device();
+    let wanted = DEVICES.lock().unwrap().get(v.name).cloned();
     let options = devices(v.name);
-    options.iter().find(|(d, _)| *d == wanted).or(options.first()).map_or("cpu", |(d, _)| *d)
-}
-
-fn device() -> &'static str {
-    *DEVICE.lock().unwrap()
+    options.iter().find(|(d, _)| Some(*d) == wanted.as_deref()).or(options.first()).map_or("cpu", |(d, _)| *d)
 }
 
 fn device_name(device: &str) -> &'static str {
@@ -262,7 +260,8 @@ fn device_name(device: &str) -> &'static str {
         "gpu" => "the GPU",
         "cpu" => "the CPU",
         "directml" => "the GPU (DirectML)",
-        "vulkan" => "the GPU (Vulkan)",
+        "ggml-gpu" if cfg!(target_os = "macos") => "the GPU (Metal)",
+        "ggml-gpu" => "the GPU (Vulkan)",
         "ggml" => "the CPU (ggml)",
         "ov-gpu" => "the GPU (OpenVINO)",
         "ov-npu" => "the NPU (OpenVINO)",
@@ -277,29 +276,27 @@ fn onnx_on_directml() -> bool {
     cfg!(windows) && device_for(&V3) == "directml"
 }
 
-/// Where `model_name` can run here, as (Settings value, label), the default first: Neural Engine,
-/// GPU and CPU through Core ML on a Mac; elsewhere ONNX Runtime (CPU, DirectML) and transcribe-cpp
-/// (Vulkan, CPU), as far as the model has those builds.
+/// Where `model_name` can run here, as (Settings value, label), the default first: Core ML (Neural
+/// Engine, GPU, CPU) on a Mac, else ONNX Runtime (CPU, DirectML); then transcribe-cpp (Metal or
+/// Vulkan GPU, CPU) and OpenVINO, as far as the model has those builds.
 pub fn devices(model_name: &str) -> Vec<(&'static str, String)> {
     let v = variant(model_name);
-    if v.on_neural_engine_here() {
-        return vec![
-            ("ane", "Neural Engine (recommended)".to_string()),
-            ("gpu", "GPU".to_string()),
-            ("cpu", "CPU".to_string()),
-        ];
-    }
     let mut out = Vec::new();
-    if v.cpu.is_some() {
+    if v.on_neural_engine_here() {
+        out.push(("ane", "Neural Engine · Core ML (recommended)".to_string()));
+        out.push(("gpu", "GPU · Core ML".to_string()));
+        out.push(("cpu", "CPU · Core ML".to_string()));
+    } else if v.cpu.is_some() {
         out.push(("cpu", format!("CPU · ONNX Runtime ({} threads)", crate::cpu_features::parakeet_threads())));
         if cfg!(windows) && engine_helper().is_some() {
             out.push(("directml", "GPU · DirectML".to_string()));
         }
     }
     if v.gguf.is_some() && engine_helper().is_some() {
-        // whisper-rs's ggml sees the same Vulkan GPUs as the helper's.
+        // whisper-rs's ggml sees the same GPUs (Metal, Vulkan) as the helper's.
         if let Some(gpu) = crate::transcribe::gpu_devices().into_iter().next() {
-            out.push(("vulkan", format!("GPU · Vulkan ({gpu})")));
+            let api = if cfg!(target_os = "macos") { "Metal" } else { "Vulkan" };
+            out.push(("ggml-gpu", format!("GPU · {api} ({gpu})")));
         }
         out.push(("ggml", "CPU · ggml".to_string()));
     }
@@ -314,13 +311,22 @@ pub fn devices(model_name: &str) -> Vec<(&'static str, String)> {
     out
 }
 
-/// A Parakeet model Bifaria offers. v3 has a CPU (ONNX) and a Neural Engine build; its re-trained
-/// siblings ship only for Core ML, so they're offered where the Neural Engine helper runs.
+/// A model Bifaria runs outside whisper.cpp: Parakeet v3 (ONNX, Core ML, GGUF, OpenVINO builds),
+/// its re-trained siblings (Core ML, some GGUF), and the GGUF catalog (model_catalog.json) for the
+/// transcribe-cpp helper. Each is offered where one of its builds can run.
 pub struct Variant {
     /// Its `model_name` in settings and the model list.
     pub name: &'static str,
     pub title: &'static str,
     pub summary: &'static str,
+    /// Model family as the catalog names it ("parakeet", "canary", "moonshine", …).
+    pub family: &'static str,
+    /// Language codes it transcribes ("en", "uk", …).
+    pub languages: &'static [&'static str],
+    /// It can translate speech to English.
+    pub translate: bool,
+    /// Shown without "Show all models".
+    pub curated: bool,
     cpu: Option<&'static ModelFiles>,
     ane: Option<&'static ModelFiles>,
     /// GGUF build for the transcribe-cpp helper (Windows, Linux).
@@ -337,6 +343,10 @@ const V3: Variant = Variant {
     name: crate::model_download::PARAKEET_MODEL,
     title: "Parakeet TDT 0.6B v3",
     summary: "Real-Time (~80-150 ms, 25 langs)",
+    family: "parakeet",
+    languages: EU25,
+    translate: false,
+    curated: true,
     cpu: Some(&ONNX),
     ane: Some(&NEURAL_ENGINE),
     gguf: Some(&V3_GGUF),
@@ -348,6 +358,10 @@ const ULTRA: Variant = Variant {
     name: "parakeet-ultra",
     title: "Parakeet Ultra",
     summary: "Most accurate Parakeet, same speed (25 langs)",
+    family: "parakeet",
+    languages: EU25,
+    translate: false,
+    curated: true,
     cpu: None,
     ane: Some(&ULTRA_ANE),
     gguf: Some(&ULTRA_GGUF),
@@ -359,6 +373,10 @@ const REDUX: Variant = Variant {
     name: "parakeet-redux",
     title: "Parakeet Redux",
     summary: "Smallest; better than v3 in other languages, a bit worse in English",
+    family: "parakeet",
+    languages: EU25,
+    translate: false,
+    curated: true,
     cpu: None,
     ane: Some(&REDUX_ANE),
     gguf: None,
@@ -370,6 +388,10 @@ const PHONON2: Variant = Variant {
     name: "phonon-2",
     title: "Phonon-2",
     summary: "English only; the fastest",
+    family: "parakeet",
+    languages: &["en"],
+    translate: false,
+    curated: true,
     cpu: None,
     ane: Some(&PHONON2_ANE),
     gguf: None,
@@ -378,17 +400,86 @@ const PHONON2: Variant = Variant {
     min_macos: 15,
 };
 
-/// Every Parakeet model, v3 first.
-pub static VARIANTS: [&Variant; 4] = [&V3, &ULTRA, &REDUX, &PHONON2];
+/// The 25 European languages of Parakeet v3 and its siblings.
+const EU25: &[&str] = &[
+    "bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de", "el", "hu", "it", "lv", "lt", "mt", "pl", "pt", "ro", "sk", "sl", "es", "sv", "ru", "uk",
+];
 
-/// Whether `model_name` is one of the Parakeet models (any variant).
-pub fn is_parakeet(model_name: &str) -> bool {
-    VARIANTS.iter().any(|v| v.name == model_name)
+/// Every model this module runs: Parakeet v3 first, its siblings, then the GGUF catalog.
+pub fn variants() -> &'static [&'static Variant] {
+    static ALL: std::sync::OnceLock<Vec<&'static Variant>> = std::sync::OnceLock::new();
+    ALL.get_or_init(|| {
+        let mut all: Vec<&'static Variant> = vec![&V3, &ULTRA, &REDUX, &PHONON2];
+        all.extend(catalog_variants());
+        all
+    })
 }
 
-/// The Parakeet model called `model_name`, or v3.
+/// The GGUF models in model_catalog.json (scripts/sync_model_catalog.py), each run by the
+/// transcribe-cpp helper from models/<id>-gguf.
+fn catalog_variants() -> Vec<&'static Variant> {
+    fn leak(s: &str) -> &'static str {
+        Box::leak(s.to_string().into_boxed_str())
+    }
+    let catalog: Value = serde_json::from_str(include_str!("model_catalog.json")).expect("model_catalog.json is valid JSON");
+    let Some(models) = catalog["models"].as_array() else { return Vec::new() };
+    models
+        .iter()
+        .filter_map(|m| {
+            let id = m["id"].as_str()?;
+            let files: &'static [(&'static str, u64)] = Box::leak(vec![(leak(m["file"].as_str()?), m["size"].as_u64()?)].into_boxed_slice());
+            let gguf: &'static ModelFiles = Box::leak(Box::new(ModelFiles { dir: leak(&format!("{id}-gguf")), files, url: leak(m["url"].as_str()?) }));
+            let languages: Vec<&'static str> = m["languages"].as_array()?.iter().filter_map(|l| Some(leak(l.as_str()?))).collect();
+            let summary = [m["parameters"].as_str().unwrap_or_default(), m["description"].as_str().unwrap_or_default()]
+                .iter()
+                .filter(|s| !s.is_empty())
+                .copied()
+                .collect::<Vec<_>>()
+                .join(" · ");
+            Some(&*Box::leak(Box::new(Variant {
+                name: leak(id),
+                title: leak(m["name"].as_str()?),
+                summary: leak(&summary),
+                family: leak(m["family"].as_str()?),
+                languages: Box::leak(languages.into_boxed_slice()),
+                translate: m["translate"].as_bool().unwrap_or(false),
+                curated: m["curated"].as_bool().unwrap_or(false),
+                cpu: None,
+                ane: None,
+                gguf: Some(gguf),
+                ov: None,
+                ane_version: "",
+                min_macos: 0,
+            })))
+        })
+        .collect()
+}
+
+/// Labels for the model list: where `model_name` can run here ("Neural Engine", "GPU", "NPU") and
+/// "Translate".
+pub fn tags(model_name: &str) -> Vec<String> {
+    let v = variant(model_name);
+    let devices: Vec<&str> = devices(model_name).into_iter().map(|(d, _)| d).collect();
+    let mut tags = Vec::new();
+    for (label, values) in [("Neural Engine", &["ane"][..]), ("GPU", &["gpu", "ggml-gpu", "directml", "ov-gpu"][..]), ("NPU", &["ov-npu"][..])] {
+        if devices.iter().any(|d| values.contains(d)) {
+            tags.push(label.to_string());
+        }
+    }
+    if v.translate {
+        tags.push("Translate".to_string());
+    }
+    tags
+}
+
+/// Whether `model_name` runs here rather than in whisper.cpp: a Parakeet or catalog model.
+pub fn is_parakeet(model_name: &str) -> bool {
+    variants().iter().any(|v| v.name == model_name)
+}
+
+/// The model called `model_name`, or Parakeet v3.
 pub fn variant(model_name: &str) -> &'static Variant {
-    VARIANTS.iter().copied().find(|v| v.name == model_name).unwrap_or(&V3)
+    variants().iter().copied().find(|v| v.name == model_name).unwrap_or(&V3)
 }
 
 /// Which build the helper runs from a model folder.
@@ -406,7 +497,7 @@ fn helper_build(dir: &Path) -> Option<(&'static Variant, Build)> {
     if dir == ONNX.path() && onnx_on_directml() {
         return Some((&V3, Build::DirectMl));
     }
-    VARIANTS.iter().copied().find_map(|v| {
+    variants().iter().copied().find_map(|v| {
         [(v.ane, Build::CoreMl), (v.gguf, Build::Gguf), (v.ov, Build::OpenVino)]
             .into_iter()
             .find(|(files, _)| files.is_some_and(|f| f.path() == dir))
@@ -428,24 +519,22 @@ impl Variant {
         self.cpu.is_some() || self.on_neural_engine_here() || ((self.gguf.is_some() || self.ov.is_some()) && engine_helper().is_some())
     }
 
-    /// The build to use: GGUF when Settings picks the helper; else the Core ML one where it runs,
-    /// unless only the CPU one is downloaded so far (it's then fetched in the background, see
-    /// `download_neural_engine_model`).
+    /// The build to use: GGUF or OpenVINO when Settings picks one of their devices; else the Core
+    /// ML one where it runs, unless only the CPU one is downloaded so far (it's then fetched in the
+    /// background, see `download_neural_engine_model`).
     fn current(&self) -> &'static ModelFiles {
-        if !self.on_neural_engine_here() {
-            let device = device_for(self);
-            if let Some(gguf) = self.gguf.filter(|_| matches!(device, "vulkan" | "ggml")) {
-                return gguf;
-            }
-            if let Some(ov) = self.ov.filter(|_| device.starts_with("ov-")) {
-                return ov;
-            }
+        let device = device_for(self);
+        if let Some(gguf) = self.gguf.filter(|_| matches!(device, "ggml-gpu" | "ggml")) {
+            return gguf;
+        }
+        if let Some(ov) = self.ov.filter(|_| device.starts_with("ov-")) {
+            return ov;
         }
         match (self.ane, self.cpu) {
             (Some(ane), Some(cpu)) if self.on_neural_engine_here() && (ane.ready() || !cpu.ready()) => ane,
             (_, Some(cpu)) => cpu,
             (Some(ane), None) => ane,
-            (None, None) => unreachable!("every variant has a build"),
+            (None, None) => self.gguf.or(self.ov).expect("every model has a build"),
         }
     }
 }
@@ -780,7 +869,7 @@ impl ParakeetTranscriber {
             let units = match build {
                 Build::CoreMl => device.to_string(),
                 Build::Gguf if device == "ggml" => "cpu".to_string(),
-                Build::Gguf => "vulkan".to_string(),
+                Build::Gguf => "gpu".to_string(),
                 Build::OpenVino => format!("openvino:{}", openvino_id(device)),
                 Build::DirectMl => "directml".to_string(),
             };
@@ -790,7 +879,13 @@ impl ParakeetTranscriber {
             crate::pipeline_logger::log_stage_event(
                 &get_data_dir(),
                 "MODEL_LOAD",
-                &format!("Loaded {} on {} in {} ms (in {ANE_HELPER})", v.title, device_name(device), started.elapsed().as_millis()),
+                &format!(
+                    "Loaded {} on {} in {} ms (in {})",
+                    v.title,
+                    device_name(device),
+                    started.elapsed().as_millis(),
+                    if build == Build::CoreMl { ANE_HELPER } else { ENGINE_HELPER }
+                ),
             );
             return Ok(());
         }
@@ -938,10 +1033,11 @@ mod tests {
         assert_eq!(variant("parakeet-ultra").title, "Parakeet Ultra");
         // An unknown name falls back to v3.
         assert_eq!(variant("something-else").name, crate::model_download::PARAKEET_MODEL);
-        // Each Core ML folder belongs to its own variant, so the helper loads the right version.
-        for v in VARIANTS {
-            let ane = v.ane.expect("every variant has a Core ML build");
-            assert_eq!(helper_build(&ane.path()).map(|(f, b)| (f.name, b)), Some((v.name, Build::CoreMl)));
+        // Each build's folder belongs to its own model, so the helper loads the right one.
+        for v in variants() {
+            if let Some(ane) = v.ane {
+                assert_eq!(helper_build(&ane.path()).map(|(f, b)| (f.name, b)), Some((v.name, Build::CoreMl)));
+            }
             if let Some(gguf) = v.gguf {
                 assert_eq!(helper_build(&gguf.path()).map(|(f, b)| (f.name, b)), Some((v.name, Build::Gguf)));
             }
@@ -952,6 +1048,20 @@ mod tests {
         assert!(helper_build(&ONNX.path()).is_none());
         // v3 runs anywhere (its CPU build); the others only where the Neural Engine helper runs.
         assert!(V3.available());
+    }
+
+    #[test]
+    fn reads_the_gguf_catalog() {
+        let canary = variant("canary-1b-v2");
+        assert_eq!(canary.name, "canary-1b-v2");
+        assert!(canary.translate && canary.languages.len() > 20 && canary.family == "canary");
+        let gguf = canary.gguf.expect("a catalog model is a GGUF file");
+        assert!(gguf.files[0].0.ends_with(".gguf") && gguf.files[0].1 > 100_000_000);
+        assert!(gguf.url.starts_with("https://huggingface.co/") && gguf.dir == "canary-1b-v2-gguf");
+        // Whisper stays with whisper.cpp; v3 and Ultra aren't listed twice.
+        assert!(variants().iter().all(|v| v.family != "whisper"));
+        assert_eq!(variants().iter().filter(|v| v.name == "parakeet-ultra").count(), 1);
+        assert!(variant("moonshine-tiny-uk").languages == ["uk"]);
     }
 
     /// The helper protocol, against a stand-in that loads anything and answers "hi" to audio.

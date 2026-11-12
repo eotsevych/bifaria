@@ -127,6 +127,10 @@ fn make_custom_item(filename: &str, size: u64) -> crate::transcribe::ModelCatalo
         filename: filename.to_string(),
         downloaded: size > 0,
         file_size_bytes: size,
+        family: "custom".to_string(),
+        languages: crate::transcribe::whisper_languages(),
+        tags: crate::transcribe::whisper_tags(),
+        curated: true,
     }
 }
 

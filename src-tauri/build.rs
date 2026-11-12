@@ -23,6 +23,17 @@ fn main() {
     needs: "Xcode with Swift 6 and network access for FluidAudio",
     missing: "Parakeet will run on the CPU instead of the Neural Engine",
   });
+  // bifaria-engine: GGUF models (the catalog, Parakeet) on the Mac's GPU (Metal) or CPU, with
+  // transcribe-cpp. Without it Bifaria offers only Whisper and the Core ML models.
+  build_helper(Helper {
+    name: "bifaria-engine",
+    inputs: &["engine/Cargo.toml", "engine/Cargo.lock", "engine/build.rs", "engine/src/main.rs", "engine/src/openvino.rs"],
+    script: "../scripts/build_engine_mac.sh",
+    require_env: "BIFARIA_REQUIRE_ENGINE",
+    skip_env: Some("BIFARIA_SKIP_APPLE_ASR"),
+    needs: "CMake and network access for crates.io",
+    missing: "the GGUF models (Canary, Moonshine, …) won't be offered",
+  });
   stand_in_engine_bundle();
   tauri_build::build()
 }

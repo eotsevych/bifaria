@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Tokens } from "@/lib/tokens";
 import { errorMessage } from "@/lib/utils";
 import { Section, Row, FieldSelect, CopyButton } from "./SettingsPrimitives";
+import ModelPicker from "./ModelPicker";
 import { SELECTABLE } from "./selectable";
 import { useSettingsContext } from "./useSettingsContext";
 import Toggle from "@/components/ui/Toggle";
@@ -148,15 +149,6 @@ export default function AudioLabTab({
   const [saving, setSaving] = useState<SaveKind | null>(null);
   const [saveError, setSaveError] = useState<{ kind: SaveKind; message: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-
-  const availableModels =
-    models.length > 0
-      ? models.map((m) => ({ value: m.filename, label: m.name }))
-      : [
-          { value: "ggml-base.bin", label: "Whisper Base (local)" },
-          { value: "ggml-medium-q5_0.bin", label: "Whisper Medium" },
-          { value: "parakeet-tdt-0.6b-v3", label: "Parakeet TDT 0.6B v3" },
-        ];
 
   const languageOptions = [
     { value: "auto", label: "Auto" },
@@ -668,7 +660,7 @@ export default function AudioLabTab({
 
       <Section title="Experiment (Runs on Real Audio)" t={t}>
         <Row label="Model" hint="Whisper GGML or Parakeet — real inference" t={t}>
-          <FieldSelect value={model} onChange={setModel} options={availableModels} t={t} />
+          <ModelPicker models={models} value={model} onChange={setModel} t={t} />
         </Row>
         <Row label="Language hint" hint="null = auto" t={t}>
           <FieldSelect value={language} onChange={setLanguage} options={languageOptions} t={t} />

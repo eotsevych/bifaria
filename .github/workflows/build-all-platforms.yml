@@ -140,6 +140,7 @@ jobs:
           BIFARIA_REQUIRE_APPLE_TRANSLATE: "1"
           # And without the Neural Engine speech recognition helper (Parakeet on Apple Silicon).
           BIFARIA_REQUIRE_APPLE_ASR: "1"
+          BIFARIA_REQUIRE_ENGINE: "1"
           # Notarization (skipped when unset) with an App Store Connect API key.
           # Only on release tags and manual runs; it adds ~15 minutes.
           APPLE_API_KEY: ${{ (env.IS_RELEASE == 'true' || github.event_name == 'workflow_dispatch') && secrets.APPLE_API_KEY || '' }}

@@ -105,9 +105,10 @@ pub struct AppSettings {
     /// Where Whisper runs: "auto" (the GPU when there is one) or "cpu".
     #[serde(default = "default_device_backend")]
     pub device_backend: String,
-    /// Where Parakeet's Core ML build runs on a Mac: "ane" (Neural Engine), "gpu" or "cpu".
-    #[serde(default = "default_parakeet_device")]
-    pub parakeet_device: String,
+    /// Where each helper-run model (Parakeet, the catalog) runs, by model name (Settings → Runs on;
+    /// see parakeet::devices). A model without an entry runs on its first option.
+    #[serde(default)]
+    pub model_devices: std::collections::BTreeMap<String, String>,
     /// On ("Fast"): pieces cut at long pauses are transcribed while recording (see `live_chunks`),
     /// and a rest over 40 s is cut at pauses at the end (see `chunking`). Off ("Whole"): it is sent
     /// to the model as one whole track and logged as such.
@@ -204,9 +205,6 @@ fn default_device_backend() -> String {
     "auto".to_string()
 }
 
-fn default_parakeet_device() -> String {
-    "ane".to_string()
-}
 
 fn default_apple_translation_model() -> String {
     "fast".to_string()
@@ -292,7 +290,7 @@ impl Default for AppSettings {
             apple_fallback_provider: String::new(),
             apple_translation_model: default_apple_translation_model(),
             device_backend: "auto".to_string(),
-            parakeet_device: default_parakeet_device(),
+            model_devices: Default::default(),
             audio_chunking: false,
             noise_reduction: default_noise_reduction(),
             mask_confidential: false,

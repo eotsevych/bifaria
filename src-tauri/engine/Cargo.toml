@@ -1,6 +1,6 @@
-# bifaria-asr for Windows and Linux: runs speech models outside the app (as the Swift helper does
-# on the Mac), so transcribe-cpp's ggml never meets whisper-rs's copy and a GPU driver crash can't
-# take Bifaria down. Its own build, not a workspace member, for the same reason.
+# bifaria-engine: runs speech models outside the app (as the Swift helper does for Core ML on the
+# Mac), so transcribe-cpp's ggml never meets whisper-rs's copy and a GPU driver crash can't take
+# Bifaria down. Its own build, not a workspace member, for the same reason.
 [package]
 name = "bifaria-engine"
 version = "0.1.0"
@@ -8,7 +8,7 @@ edition = "2021"
 publish = false
 
 [[bin]]
-name = "bifaria-asr"
+name = "bifaria-engine"
 path = "src/main.rs"
 
 [dependencies]
@@ -27,7 +27,7 @@ transcribe-cpp = { version = "=0.4.2", default-features = false, features = ["dy
 [target.'cfg(windows)'.dependencies]
 parakeet-rs = { version = "0.3", features = ["directml"] }
 
-# Only for trying the helper on a Mac; Bifaria uses the Swift helper there.
+# GGUF models on the Mac's GPU (Metal) and CPU; Core ML stays with the Swift helper.
 [target.'cfg(target_os = "macos")'.dependencies]
 transcribe-cpp = { version = "=0.4.2", default-features = false, features = ["metal"] }
 

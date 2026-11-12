@@ -19,6 +19,31 @@ pub struct ModelCatalogItem {
     pub filename: String,
     pub downloaded: bool,
     pub file_size_bytes: u64,
+    /// "whisper", "parakeet", "canary", … or "custom": groups the model list.
+    pub family: String,
+    /// Language codes it transcribes ("en", "uk", …).
+    pub languages: Vec<String>,
+    /// "Neural Engine", "GPU", "NPU", "Translate": where it can run here and what else it does.
+    pub tags: Vec<String>,
+    /// Shown without "Show all models".
+    pub curated: bool,
+}
+
+/// The languages whisper.cpp knows (every Whisper model but the ".en" ones).
+pub(crate) fn whisper_languages() -> Vec<String> {
+    // SAFETY: whisper.cpp's static language table; the strings live for the whole process.
+    unsafe {
+        (0..=whisper_rs_sys::whisper_lang_max_id())
+            .map(|i| whisper_rs_sys::whisper_lang_str(i))
+            .filter(|p| !p.is_null())
+            .map(|p| std::ffi::CStr::from_ptr(p).to_string_lossy().into_owned())
+            .collect()
+    }
+}
+
+/// Model-list labels for a Whisper model.
+pub(crate) fn whisper_tags() -> Vec<String> {
+    if devices().len() > 1 { vec!["GPU".to_string()] } else { Vec::new() }
 }
 
 pub const HF_BASE_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
@@ -147,6 +172,12 @@ pub fn get_model_catalog() -> Vec<ModelCatalogItem> {
             } else {
                 size_desc.to_string()
             };
+            let (family, languages, tags) = if *id == "parakeet" {
+                let v = crate::parakeet::variant(filename);
+                (v.family.to_string(), v.languages.iter().map(|l| l.to_string()).collect(), crate::parakeet::tags(filename))
+            } else {
+                ("whisper".to_string(), whisper_languages(), whisper_tags())
+            };
             ModelCatalogItem {
                 id: id.to_string(),
                 name: name.to_string(),
@@ -155,13 +186,17 @@ pub fn get_model_catalog() -> Vec<ModelCatalogItem> {
                 filename: filename.to_string(),
                 downloaded,
                 file_size_bytes,
+                family,
+                languages,
+                tags,
+                curated: true,
             }
         })
         .collect();
 
-    // Parakeet's re-trained siblings (Ultra, Redux, Phonon-2), where this computer can run them:
-    // they ship only for Core ML, so on a Mac with Apple silicon.
-    for v in crate::parakeet::VARIANTS.iter().skip(1).filter(|v| v.available()) {
+    // Parakeet's siblings (Ultra, Redux, Phonon-2) and the GGUF catalog, where this computer can
+    // run them (Core ML on a Mac, the transcribe-cpp helper).
+    for v in crate::parakeet::variants().iter().skip(1).filter(|v| v.available()) {
         let ready = crate::parakeet::ParakeetTranscriber::model_ready(v.name);
         items.push(ModelCatalogItem {
             id: v.name.to_string(),
@@ -171,6 +206,10 @@ pub fn get_model_catalog() -> Vec<ModelCatalogItem> {
             filename: v.name.to_string(),
             downloaded: ready,
             file_size_bytes: if ready { crate::parakeet::ParakeetTranscriber::downloaded_size(v.name) } else { 0 },
+            family: v.family.to_string(),
+            languages: v.languages.iter().map(|l| l.to_string()).collect(),
+            tags: crate::parakeet::tags(v.name),
+            curated: v.curated,
         });
     }
 
@@ -224,6 +263,10 @@ pub fn get_model_catalog() -> Vec<ModelCatalogItem> {
                 filename: fname,
                 downloaded: size > 0,
                 file_size_bytes: size,
+                family: "custom".to_string(),
+                languages: whisper_languages(),
+                tags: whisper_tags(),
+                curated: true,
             });
         }
     }

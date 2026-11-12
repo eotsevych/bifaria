@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
-    "externalBin": ["binaries/bifaria-translate", "binaries/bifaria-asr"]
+    "externalBin": ["binaries/bifaria-translate", "binaries/bifaria-asr", "binaries/bifaria-engine"]
   }
 }
