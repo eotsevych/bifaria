@@ -27,6 +27,13 @@ pub fn process_rss_mb() -> u64 {
     sys.process(pid).map(|p| p.memory() / (1024 * 1024)).unwrap_or(0)
 }
 
+/// Memory the system can still hand out, in MB, refreshing only memory.
+pub fn available_memory_mb() -> u64 {
+    let mut sys = System::new();
+    sys.refresh_memory();
+    sys.available_memory() / (1024 * 1024)
+}
+
 impl SystemVitals {
     pub fn collect() -> Self {
         let mut sys = System::new_all();

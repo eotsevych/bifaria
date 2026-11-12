@@ -344,6 +344,20 @@ impl Drop for Transcribing {
     }
 }
 
+/// Free memory needed to keep a second speech model loaded; the largest Whisper model is ~1.6 GB.
+const TWO_MODELS_MIN_FREE_MB: u64 = 3072;
+
+/// Whether there's room for a second speech model next to the one in use.
+pub fn room_for_two_models() -> bool {
+    crate::vitals::available_memory_mb() >= TWO_MODELS_MIN_FREE_MB
+}
+
+/// Whether a dictation may keep Audio Lab's model loaded while it uses the other one, so Audio Lab
+/// doesn't reload it afterwards. Otherwise, as always, one speech model at a time.
+pub fn keep_both_models() -> bool {
+    is_transcribing() && room_for_two_models()
+}
+
 /// A dictation is being recorded, transcribed or translated.
 fn dictation_active(phase: &Mutex<AssistantPhase>) -> bool {
     matches!(
@@ -474,10 +488,9 @@ pub async fn run_experiment(
     let is_parakeet = req.model_name == crate::model_download::PARAKEET_MODEL;
 
     if is_parakeet {
-        // Single Model Policy: unload Whisper
-        {
-            let mut tr = transcriber.lock().unwrap();
-            tr.unload();
+        // One model at a time, unless there's room to keep the other (the dictation's) loaded too.
+        if !room_for_two_models() {
+            transcriber.lock().unwrap().unload();
         }
         report(app_handle, "Loading the model", None);
         let model_dir = ParakeetTranscriber::ensure_model(app_handle).await?;
@@ -579,10 +592,9 @@ pub async fn run_experiment(
             requires_clarification: post.requires_clarification,
         })
     } else {
-        // Single Model Policy: unload Parakeet
-        {
-            let mut pk = parakeet_transcriber.lock().unwrap();
-            pk.unload();
+        // One model at a time, unless there's room to keep the other (the dictation's) loaded too.
+        if !room_for_two_models() {
+            parakeet_transcriber.lock().unwrap().unload();
         }
         report(app_handle, "Loading the model", None);
         let model_path = Transcriber::ensure_model(app_handle, &req.model_name).await?;
