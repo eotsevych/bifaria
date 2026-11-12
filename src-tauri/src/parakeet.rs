@@ -271,7 +271,8 @@ fn device_name(device: &str) -> &'static str {
     }
 }
 
-/// The ONNX build (v3 only) runs on the GPU through DirectML (Windows only).
+/// The ONNX build (v3 only) runs on the GPU through DirectML (Windows only), in the helper: ONNX
+/// Runtime with DirectML is a DLL build, while the app links the CPU one in.
 fn onnx_on_directml() -> bool {
     cfg!(windows) && device_for(&V3) == "directml"
 }
@@ -291,7 +292,7 @@ pub fn devices(model_name: &str) -> Vec<(&'static str, String)> {
     let mut out = Vec::new();
     if v.cpu.is_some() {
         out.push(("cpu", format!("CPU · ONNX Runtime ({} threads)", crate::cpu_features::parakeet_threads())));
-        if cfg!(windows) {
+        if cfg!(windows) && engine_helper().is_some() {
             out.push(("directml", "GPU · DirectML".to_string()));
         }
     }
@@ -390,16 +391,21 @@ pub fn variant(model_name: &str) -> &'static Variant {
     VARIANTS.iter().copied().find(|v| v.name == model_name).unwrap_or(&V3)
 }
 
-/// Which helper build a model folder holds.
+/// Which build the helper runs from a model folder.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Build {
     CoreMl,
     Gguf,
     OpenVino,
+    /// The ONNX build on DirectML.
+    DirectMl,
 }
 
 /// The variant whose helper build lives in `dir`, and which build it is.
 fn helper_build(dir: &Path) -> Option<(&'static Variant, Build)> {
+    if dir == ONNX.path() && onnx_on_directml() {
+        return Some((&V3, Build::DirectMl));
+    }
     VARIANTS.iter().copied().find_map(|v| {
         [(v.ane, Build::CoreMl), (v.gguf, Build::Gguf), (v.ov, Build::OpenVino)]
             .into_iter()
@@ -582,7 +588,7 @@ impl ParakeetTranscriber {
     pub fn prewarm(&mut self, model_dir: &Path) -> Result<(), String> {
         if !self.is_loaded(model_dir) {
             log::info!("Prewarming Parakeet model into RAM from {:?}", model_dir);
-            self.load_model(model_dir)?;
+            self.load_model(model_dir, true)?;
         }
         Ok(())
     }
@@ -757,14 +763,15 @@ impl ParakeetTranscriber {
     }
 
     /// Load the model in `model_dir` into memory: the Neural Engine build in the helper, else ONNX.
-    fn load_model(&mut self, model_dir: &Path) -> Result<(), String> {
+    /// `use_helper` false loads the ONNX build in the app, e.g. after the helper failed.
+    fn load_model(&mut self, model_dir: &Path, use_helper: bool) -> Result<(), String> {
         let dir_str = model_dir
             .to_str()
             .ok_or_else(|| "Bad model path".to_string())?;
 
         let rss_before = crate::vitals::process_rss_mb();
         let started = Instant::now();
-        if let Some((v, build)) = helper_build(model_dir) {
+        if let Some((v, build)) = helper_build(model_dir).filter(|_| use_helper) {
             let helper = if build == Build::CoreMl { ane_helper() } else { engine_helper() }.ok_or("the speech helper isn't available")?;
             // One model at a time: the CPU session goes before the helper loads.
             self.model = None;
@@ -775,6 +782,7 @@ impl ParakeetTranscriber {
                 Build::Gguf if device == "ggml" => "cpu".to_string(),
                 Build::Gguf => "vulkan".to_string(),
                 Build::OpenVino => format!("openvino:{}", openvino_id(device)),
+                Build::DirectMl => "directml".to_string(),
             };
             self.ane = Some(AneHelper::start(&helper, model_dir, v.ane_version, &units)?);
             self.current_dir = dir_str.to_string();
@@ -790,10 +798,6 @@ impl ParakeetTranscriber {
         // The crate defaults to 4 threads whatever the machine has.
         let threads = crate::cpu_features::parakeet_threads();
         let config = parakeet_rs::ExecutionConfig::default().with_intra_threads(threads);
-        // If DirectML can't start, ONNX Runtime quietly falls back to the CPU.
-        #[cfg(windows)]
-        let config = if onnx_on_directml() { config.with_execution_provider(parakeet_rs::ExecutionProvider::DirectML) } else { config };
-        let engine = if onnx_on_directml() { "the GPU (DirectML)".to_string() } else { format!("{threads} CPU threads") };
         let parakeet = parakeet_rs::ParakeetTDT::from_pretrained(dir_str, Some(config))
             .map_err(|e| format!("Failed to load Parakeet: {:?}", e))?;
 
@@ -804,9 +808,9 @@ impl ParakeetTranscriber {
             &get_data_dir(),
             "MODEL_LOAD",
             &format!(
-                "Loaded Parakeet TDT in {} ms on {}; app memory {} → {} MB",
+                "Loaded Parakeet TDT in {} ms on {} threads; app memory {} → {} MB",
                 started.elapsed().as_millis(),
-                engine,
+                threads,
                 rss_before,
                 crate::vitals::process_rss_mb()
             ),
@@ -845,7 +849,7 @@ impl ParakeetTranscriber {
 
         let dir_str = model_dir.to_str().unwrap_or_default();
         if self.model.is_none() || self.current_dir != dir_str {
-            self.load_model(&model_dir)?;
+            self.load_model(&model_dir, false)?;
         }
 
         let parakeet = self
@@ -873,7 +877,7 @@ impl ParakeetTranscriber {
     /// cuts lost words at each one and cost ~0.7 s on 3 minutes, so `chunks` aren't used here.
     fn transcribe_on_neural_engine(&mut self, samples: &[f32], model_dir: &Path) -> Result<(String, String, u64, i32), String> {
         if self.ane.is_none() || self.current_dir != model_dir.to_str().unwrap_or_default() {
-            self.load_model(model_dir)?;
+            self.load_model(model_dir, true)?;
         }
         let helper = self.ane.as_mut().ok_or("Parakeet model not loaded")?;
         let t0 = Instant::now();

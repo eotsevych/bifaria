@@ -312,7 +312,8 @@ jobs:
             libasound2-dev \
             libvulkan-dev \
             glslc \
-            spirv-headers
+            spirv-headers \
+            ocl-icd-libopencl1
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -341,12 +342,15 @@ jobs:
       - name: Build the speech helper
         run: scripts/build_engine.sh
 
+      # NO_STRIP: linuxdeploy's own strip can't read some newer libraries (e.g. OpenVINO's) and fails.
       - name: Build Linux packages
+        env:
+          NO_STRIP: "true"
         run: |
           if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-            bun run tauri build --bundles appimage,deb,rpm --config "$UPDATER_CONFIG"
+            bun run tauri build --verbose --bundles appimage,deb,rpm --config "$UPDATER_CONFIG"
           else
-            bun run tauri build --bundles appimage,deb,rpm
+            bun run tauri build --verbose --bundles appimage,deb,rpm
           fi
 
       - name: Upload Linux packages

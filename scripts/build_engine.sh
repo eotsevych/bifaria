@@ -9,10 +9,9 @@ engine="$root/src-tauri/engine"
 out="$root/src-tauri/engine-bundle"
 target="${ENGINE_TARGET_DIR:-$engine/target}"
 
+# ONNX Runtime (DirectML, Windows) links its DLLs into these; a fresh or restored build folder can lack them.
+mkdir -p "$target"/release/{examples,deps} "$target"/release/build/{examples,deps}
 cargo build --release --manifest-path "$engine/Cargo.toml" --target-dir "$target"
-# The tests load transcribe-cpp's libraries, which the build copied to runtime-libs.
-PATH="$engine/runtime-libs:$PATH" LD_LIBRARY_PATH="$engine/runtime-libs:${LD_LIBRARY_PATH:-}" \
-  cargo test --release --manifest-path "$engine/Cargo.toml" --target-dir "$target"
 
 exe=bifaria-asr
 [[ "${OS:-}" == Windows_NT ]] && exe=bifaria-asr.exe
@@ -20,6 +19,17 @@ rm -rf "$out"
 mkdir -p "$out"
 cp "$target/release/$exe" "$out/"
 cp "$engine/runtime-libs/"* "$out/"
+if [[ $exe == *.exe ]]; then
+  # ONNX Runtime with DirectML for Parakeet's ONNX build on the GPU.
+  for dll in onnxruntime.dll onnxruntime_providers_shared.dll DirectML.dll; do
+    found=$(find "$target/release" -maxdepth 3 -name "$dll" | head -1)
+    if [[ -n "$found" ]]; then cp "$found" "$out/"; elif [[ $dll != onnxruntime_providers_shared.dll ]]; then echo "$dll wasn't built" >&2; exit 1; fi
+  done
+fi
+
+# The tests load the libraries next to the helper.
+PATH="$out:$PATH" LD_LIBRARY_PATH="$out:${LD_LIBRARY_PATH:-}" \
+  cargo test --release --manifest-path "$engine/Cargo.toml" --target-dir "$target"
 ls "$out" | grep -q 'ggml-vulkan' || { echo "no ggml-vulkan module was built" >&2; exit 1; }
 ls "$out" | grep -q 'ggml-cpu' || { echo "no ggml-cpu modules were built" >&2; exit 1; }
 

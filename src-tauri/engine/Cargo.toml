@@ -22,6 +22,11 @@ libloading = "0.8"
 [target.'cfg(all(any(windows, target_os = "linux"), target_arch = "x86_64"))'.dependencies]
 transcribe-cpp = { version = "=0.4.2", default-features = false, features = ["dynamic-backends", "vulkan"] }
 
+# Parakeet's ONNX build on any DirectX 12 GPU. ONNX Runtime with DirectML comes as DLLs, which ship
+# next to the helper (scripts/build_engine.sh); the app itself links the CPU build in.
+[target.'cfg(windows)'.dependencies]
+parakeet-rs = { version = "0.3", features = ["directml"] }
+
 # Only for trying the helper on a Mac; Bifaria uses the Swift helper there.
 [target.'cfg(target_os = "macos")'.dependencies]
 transcribe-cpp = { version = "=0.4.2", default-features = false, features = ["metal"] }

@@ -5,6 +5,7 @@
 //!
 //!   {"op":"load","dir":"<folder with one .gguf>","units":"vulkan"|"cpu"} → {"ok":true,"ms":…,"device":…}
 //!   {"op":"load","dir":"<OpenVINO Parakeet v3 folder>","units":"openvino:GPU|NPU|CPU"} → the same
+//!   {"op":"load","dir":"<ONNX Parakeet v3 folder>","units":"directml"} → the same (Windows)
 //!   {"op":"transcribe","audio":"<base64 of 16 kHz mono f32 little-endian>"} → {"ok":true,"text":…,"ms":…}
 //!   {"op":"devices"} → {"ok":true,"openvino":[{"id":"GPU","name":…},…]} (empty without OpenVINO)
 //!   {"op":"ping"} → {"ok":true}
@@ -26,6 +27,8 @@ enum Loaded {
     /// A session keeps its model alive.
     Ggml(Session),
     OpenVino(openvino::Eddy),
+    #[cfg(windows)]
+    DirectMl(parakeet_rs::ParakeetTDT),
 }
 
 const RATE: usize = 16_000;
@@ -59,8 +62,8 @@ fn handle(request: &Value, loaded: &mut Option<Loaded>) -> Value {
             let backend = match units {
                 "vulkan" => Some(Backend::Vulkan),
                 "cpu" => Some(Backend::Cpu),
-                _ if units.starts_with("openvino:") => None,
-                other => return failure("bad_request", &format!("Unknown \"units\" {other}; use vulkan, cpu or openvino:<device>")),
+                _ if units.starts_with("openvino:") || (cfg!(windows) && units == "directml") => None,
+                other => return failure("bad_request", &format!("Unknown \"units\" {other}; use vulkan, cpu, directml or openvino:<device>")),
             };
             // One model at a time: the old one goes before the new one loads.
             *loaded = None;
@@ -70,6 +73,8 @@ fn handle(request: &Value, loaded: &mut Option<Loaded>) -> Value {
                     let device = if backend == Backend::Cpu { "CPU".to_string() } else { model.device().map(|d| d.description).unwrap_or_default() };
                     (Loaded::Ggml(session), device)
                 }),
+                #[cfg(windows)]
+                None if units == "directml" => load_directml(dir).map(|tdt| (Loaded::DirectMl(tdt), "DirectML".to_string())),
                 None => {
                     let device = units.trim_start_matches("openvino:");
                     openvino::Eddy::load(Path::new(dir), device).map(|eddy| (Loaded::OpenVino(eddy), format!("OpenVINO {device}")))
@@ -112,6 +117,14 @@ fn load(dir: &Path, backend: Backend) -> Result<(Model, Session), String> {
     Ok((model, session))
 }
 
+/// Parakeet's ONNX build on the GPU through DirectML. If DirectML can't start, ONNX Runtime quietly
+/// runs it on the CPU.
+#[cfg(windows)]
+fn load_directml(dir: &str) -> Result<parakeet_rs::ParakeetTDT, String> {
+    let config = parakeet_rs::ExecutionConfig::default().with_execution_provider(parakeet_rs::ExecutionProvider::DirectML);
+    parakeet_rs::ParakeetTDT::from_pretrained(dir, Some(config)).map_err(|e| format!("couldn't load Parakeet for DirectML: {e:?}"))
+}
+
 /// The model file in `dir` (Bifaria keeps each model in its own folder).
 fn gguf_in(dir: &Path) -> Result<PathBuf, String> {
     std::fs::read_dir(dir)
@@ -127,6 +140,11 @@ fn transcribe(model: &mut Loaded, samples: &[f32]) -> Result<String, String> {
         let text = match model {
             Loaded::Ggml(session) => session.run(&samples[piece], &RunOptions::default()).map_err(|e| e.to_string())?.text,
             Loaded::OpenVino(eddy) => eddy.transcribe(&samples[piece])?,
+            #[cfg(windows)]
+            Loaded::DirectMl(tdt) => {
+                use parakeet_rs::Transcriber;
+                tdt.transcribe_samples(samples[piece].to_vec(), RATE as u32, 1, None).map_err(|e| format!("{e:?}"))?.text
+            }
         };
         let text = text.trim();
         if !text.is_empty() {
