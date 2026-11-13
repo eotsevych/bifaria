@@ -4,8 +4,8 @@
 # After each release, run scripts/update_homebrew_cask.sh <version> to refresh version and sha256,
 # then copy this file to Casks/bifaria.rb in the tap repo (see DEPLOYMENT.md).
 cask "bifaria" do
-  version "1.0.3"
-  sha256 "cfe5990b4e68feedd4c440765058dc7734ccc2a6effeb9da8cb9c57b49c866ce"
+  version "1.0.4"
+  sha256 "09712f4b51a1f6f3ed2163f8c9f5b13fdab4678e0dbba98b7c7f17cd23b0051a"
 
   url "https://github.com/eotsevych/bifaria/releases/download/v#{version}/Bifaria_Universal.dmg"
   name "Bifaria"
